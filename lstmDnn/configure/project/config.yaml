@@ -1,0 +1,14 @@
+raw_data:
+  app: /home/wxh/data/97
+  resource: /home/wxh/RUBiS/Client/bench/2022-3-29@14:20:10/data
+proceed_data:
+  savedir: /home/wxh/lstmDnn/data/proceed
+align_data:
+  dir: /home/wxh/lstmDnn/data/align
+filled_data:
+  dir: /home/wxh/lstmDnn/data/fill
+interval: 5
+average: false
+
+  
+    

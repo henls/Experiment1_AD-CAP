@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/wxh/lstmDnn/anomaly/pkl/single-tier-normal-feature-4"
+all_model_checkpoint_paths: "/home/wxh/lstmDnn/anomaly/pkl/single-tier-normal-feature-4"

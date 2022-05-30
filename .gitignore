@@ -30,6 +30,12 @@
 # numpy files #
 *.npy
 
+# data files #
+/data
+data/
+# cache files #
+/cache
+
 # mpich #
 /mpich*
 

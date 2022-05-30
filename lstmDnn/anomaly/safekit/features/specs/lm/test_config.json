@@ -1,0 +1,6 @@
+{"sentence_length": 8, "token_set_size": 8, 
+    "num_days": 30, 
+    "test_files": ["/home/wxh/lstmDnn/data/test_data/test_data_num-10-10000000-god-uniformization-train1.csv", 
+        "/home/wxh/lstmDnn/data/test_data/test_data_num-10-10000000-god-uniformization-train2.csv", 
+        "/home/wxh/lstmDnn/data/test_data/test_data_num-10-10000000-god-uniformization-test.csv"], 
+	"weekend_days": [3, 4, 10, 11, 17, 18, 24, 25]}

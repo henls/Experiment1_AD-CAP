@@ -1,0 +1,6 @@
+{"sentence_length": 40, "token_set_size": 8, 
+    "num_days": 29, 
+    "test_files": "/home/wxh/google_trace/task_trace_unbroken", 
+	"weekend_days": [3, 4, 10, 11, 17, 18, 24, 25], 
+    "feature": [0, 1, 2, 3, 4, 5, 6, 11, 12, 18, 19, 20]
+}

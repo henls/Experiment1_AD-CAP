@@ -1,0 +1,6 @@
+{"sentence_length": 8, "token_set_size": 8, 
+    "num_days": 30, 
+    "test_files": ["2022-3-21@16:15:17/04:15:27-normal.csv", 
+        "2022-3-21@15:15:40/03:15:50-normal.csv", 
+        "2022-3-22@8:41:23/08:41:34-normal.csv"], 
+	"weekend_days": [3, 4, 10, 11, 17, 18, 24, 25]}
