@@ -132,8 +132,10 @@ public class VerticalVmCpuScalingExampleRevised {
     private static final int CLOUDLETS = 30;
     //private static final int CLOUDLETS_INITIAL_LENGTH = 60_000_000;sampled
     private static final int CLOUDLETS_INITIAL_LENGTH = 1_000; 
-    private static final int CLOUDLETS_LENGTH_LOWER = 20_000;
-    private static final int CLOUDLETS_LENGTH_UPPER = 500_000;
+    private static final int CLOUDLETS_LENGTH_LOWER = 2_000;
+    private static final int CLOUDLETS_LENGTH_UPPER = 5_000;
+
+    private static final String workdir = System.getProperty("user.dir") + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
 
     private static final String[] TRACE_FILE_CPU = {"workload/my-trace/4665896876_28_cpu_0.1038", 
                                                     "workload/my-trace/4665896876_43_cpu_0.1038",
@@ -172,7 +174,7 @@ public class VerticalVmCpuScalingExampleRevised {
     
     boolean anomaly = true;
 
-    private static final String sampleTracePth = "/home/wxh/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample.csv";
+    private static final String sampleTracePth = workdir + "resources/workload/sample/sample.csv";
 
     int lastTime = 0;
 
@@ -225,7 +227,7 @@ public class VerticalVmCpuScalingExampleRevised {
      * @param evt information about the event happened (that for this Listener is just the simulation time)
      */
     private void onClockTickListener(EventInfo evt) {
-        vmList.forEach(vm ->
+        /*vmList.forEach(vm ->
             System.out.printf(
                 "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). RAM usage: %.2f%% (%d MB)%n",
                 evt.getTime(), vm.getId(), vm.getCpuPercentUtilization()*100.0, vm.getNumberOfPes(),
@@ -233,7 +235,7 @@ public class VerticalVmCpuScalingExampleRevised {
                 vm.getRam().getPercentUtilization()*100, vm.getRam().getAllocatedResource())
         );
         System.out.println("allocatedResource " + vmList.get(0).getPeVerticalScaling().getAllocatedResource());
-        System.out.println("PES x util = " + vmList.get(0).getNumberOfPes()*vmList.get(0).getCpuPercentUtilization());
+        System.out.println("PES x util = " + vmList.get(0).getNumberOfPes()*vmList.get(0).getCpuPercentUtilization());*/
         //统计sla违反率
         
         sla.getViloate(evt);

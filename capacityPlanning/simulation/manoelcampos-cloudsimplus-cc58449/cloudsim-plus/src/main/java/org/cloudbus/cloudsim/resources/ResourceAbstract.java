@@ -63,8 +63,6 @@ public abstract class ResourceAbstract implements Resource {
 
     @Override
     public long getAllocatedResource() {
-        //System.out.println("available " + getAvailableResource());
-        //System.out.println("allocat " + (getCapacity() - getAvailableResource()));
         return getCapacity() - getAvailableResource();
     }
 

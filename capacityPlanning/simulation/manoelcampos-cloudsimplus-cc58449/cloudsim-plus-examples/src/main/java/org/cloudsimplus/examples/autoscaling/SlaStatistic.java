@@ -24,7 +24,9 @@ public class SlaStatistic {
     double VIOLATE_SAMPLE = 0.;//统计的时段内发生违反的次数
     int SAMPLE_RATE = 1;//采样率1s一次
     int lastTime;
-    String pth = "/home/wxh/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/output/sla.csv";
+    private static final String workdir = System.getProperty("user.dir") + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
+
+    String pth = workdir + "output/sla.csv";
 
     List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>();
     List<Vm> vmList = new ArrayList<Vm>();

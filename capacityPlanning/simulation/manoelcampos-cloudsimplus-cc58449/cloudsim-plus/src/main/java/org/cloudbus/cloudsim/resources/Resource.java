@@ -107,7 +107,6 @@ public interface Resource extends ResourceCapacity {
      * @return current resource utilization (allocation) percentage in scale from 0 to 1
      */
     default double getPercentUtilization() {
-        //System.out.println(876);
         return getCapacity() > 0 ? getAllocatedResource() / (double)getCapacity() : 0.0;
     }
 
