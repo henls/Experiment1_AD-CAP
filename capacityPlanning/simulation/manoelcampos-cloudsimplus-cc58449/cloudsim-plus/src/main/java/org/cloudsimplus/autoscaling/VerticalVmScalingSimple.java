@@ -24,6 +24,7 @@
 package org.cloudsimplus.autoscaling;
 
 import org.cloudbus.cloudsim.brokers.DatacenterBroker;
+import org.cloudbus.cloudsim.cloudlets.Cloudlet;
 import org.cloudbus.cloudsim.cloudlets.CloudletExecution;
 import org.cloudbus.cloudsim.resources.*;
 import org.cloudbus.cloudsim.vms.Vm;
@@ -91,8 +92,15 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
         }*/
         //按照pe个数占用的扩展方案
         double AmountPes = getVm().getPeVerticalScaling().getResourceAmountToScale();
+        long cloudletRequestMinPes = 10000;
+        for (CloudletExecution cloud : getVm().getCloudletScheduler().getCloudletExecList()) {
+            long pes = cloud.getNumberOfPes();
+            if (pes < cloudletRequestMinPes){
+                cloudletRequestMinPes = pes;
+            }
+        }
         
-        if (getResource().getCapacity() -  AmountPes > cloudletrequestpe){
+        if (getResource().getCapacity() -  AmountPes > cloudletRequestMinPes){
             return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
         }
         else{

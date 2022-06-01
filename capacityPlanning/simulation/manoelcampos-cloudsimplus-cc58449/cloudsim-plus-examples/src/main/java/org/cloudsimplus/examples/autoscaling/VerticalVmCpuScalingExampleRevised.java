@@ -180,7 +180,7 @@ public class VerticalVmCpuScalingExampleRevised {
 
     private int createsVms;
 
-    ArrayList<Double> recordCpu = new ArrayList<Double>();
+    
     ArrayList<Double> recordRam = new ArrayList<Double>();
     
     AnomalyModel createAnomaly =  new AnomalyModel(TRACE_ANOMALY_CPU, TRACE_ANOMALY_MEM, getRand, SCHEDULING_INTERVAL, VM_PES);
