@@ -1,25 +1,29 @@
-package org.customeByWXH;
+package org.cloudbus.cloudsim.util;
 import java.util.ArrayList;
 import java.util.List;
 //import org.customeByWXH.bioUniDistribute;
 //import org.customeByWXH.combinations;
-import org.cloudbus.cloudsim.util.combinations;
-import org.cloudbus.cloudsim.util.bioUniDistribute;
+//import org.cloudbus.cloudsim.util.combinations;
+//import org.cloudbus.cloudsim.util.bioUniDistribute;
 
 public class timeSliceAlgorithm{
 
-    /*public static void main(String[] args) {
+    public static void main(String[] args) {
         ArrayList<Double> usage = new ArrayList<Double>();
-        usage.add(0.5);
-        usage.add(0.1);
-        usage.add(0.5);
+        //usage.add(0.);
+        //usage.add(0.1);
+        //usage.add(0.5);
         double ans = 0;
         ans = utilization(usage);
         System.out.println(ans);
-    }*/
+    }
 
     public static double utilization(ArrayList<Double> usages){
         int k = usages.size();
+        if (k == 0){
+            usages.add(0.);
+            k = 1;
+        }
         List<Object[]> Matrix = combinations.combination(k, 0, null);
         List<Object[]> UniPdf = bioUniDistribute.calculate(usages, 0, null);
         double used = 0.;

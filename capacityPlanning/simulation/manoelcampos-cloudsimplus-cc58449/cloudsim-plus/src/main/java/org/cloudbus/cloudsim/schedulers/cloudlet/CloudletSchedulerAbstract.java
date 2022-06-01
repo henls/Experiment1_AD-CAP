@@ -37,6 +37,10 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toList;
 import static org.cloudsimplus.listeners.CloudletResourceAllocationFailEventInfo.of;
+//王新华改
+import org.cloudbus.cloudsim.util.combinations;
+import org.cloudbus.cloudsim.util.bioUniDistribute;
+import org.cloudbus.cloudsim.util.timeSliceAlgorithm;
 
 /**
  * An abstract class for implementing {@link CloudletScheduler}s representing
@@ -1155,10 +1159,36 @@ public abstract class CloudletSchedulerAbstract implements CloudletScheduler {
     }
 
     private double getRequestedOrAllocatedCpuPercentUtilization(final double time, final boolean requestedUtilization) {
-        return cloudletExecList.stream()
+        double totalMips = getTotalMipsShare();
+        double PEs = getFreePes() + getUsedPes();
+        double usedMIPS = 0.;
+        double availMIPS = totalMips;
+        for (CloudletExecution cloud : cloudletExecList) {
+            double nop = cloud.getCloudlet().getNumberOfPes();
+            if (nop > PEs){
+                nop = PEs;
+            }
+            usedMIPS = usedMIPS + availMIPS * nop / PEs * 
+                    cloud.getCloudlet().getUtilizationModelCpu().getUtilization();
+            availMIPS = totalMips - usedMIPS;
+        }
+        
+        double ans = usedMIPS / totalMips;
+
+        //timeslice apply for one pe.
+        /*ArrayList<Double> usage = new ArrayList<Double>();
+        for (CloudletExecution cloud : cloudletExecList) {
+            usage.add(cloud.getCloudlet().getUtilizationModelCpu().getUtilization());
+        }
+        double ans = timeSliceAlgorithm.utilization(usage);
+        System.out.println("usage by wxh: " + ans);*/
+
+        /*return cloudletExecList.stream()
             .map(CloudletExecution::getCloudlet)
             .mapToDouble(cloudlet -> getAbsoluteCloudletCpuUtilizationForAllPes(time, cloudlet, requestedUtilization))
-            .sum() / vm.getTotalMipsCapacity();
+            .sum() / vm.getTotalMipsCapacity();*/
+        return ans;
+            
     }
 
     /**
@@ -1173,7 +1203,7 @@ public abstract class CloudletSchedulerAbstract implements CloudletScheduler {
         final double cloudletCpuUsageForOnePe =
             getAbsoluteCloudletResourceUtilization(
                 cloudlet, cloudlet.getUtilizationModelCpu(), time, getAvailableMipsByPe(), "CPU", requestedUtilization);
-
+        //System.out.println("usage: " + cloudletCpuUsageForOnePe * cloudlet.getNumberOfPes());
         return cloudletCpuUsageForOnePe * cloudlet.getNumberOfPes();
     }
 
@@ -1288,7 +1318,7 @@ public abstract class CloudletSchedulerAbstract implements CloudletScheduler {
                 vm.getSimulation().clockStr(), getClass().getSimpleName(), cloudlet,
                 requestedPercent*100, resourceName, allocatedPercent*100);
         }
-
+        //System.out.println("request " + allocatedPercent);
         return allocatedPercent * maxResourceAllowedToUse;
     }
 

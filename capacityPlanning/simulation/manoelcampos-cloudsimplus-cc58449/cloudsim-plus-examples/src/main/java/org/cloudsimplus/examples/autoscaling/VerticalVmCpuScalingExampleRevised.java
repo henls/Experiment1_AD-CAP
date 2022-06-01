@@ -180,7 +180,7 @@ public class VerticalVmCpuScalingExampleRevised {
 
     private int createsVms;
 
-    
+    ArrayList<Double> recordCpu = new ArrayList<Double>();
     ArrayList<Double> recordRam = new ArrayList<Double>();
     
     AnomalyModel createAnomaly =  new AnomalyModel(TRACE_ANOMALY_CPU, TRACE_ANOMALY_MEM, getRand, SCHEDULING_INTERVAL, VM_PES);
@@ -227,14 +227,14 @@ public class VerticalVmCpuScalingExampleRevised {
      * @param evt information about the event happened (that for this Listener is just the simulation time)
      */
     private void onClockTickListener(EventInfo evt) {
-        /*vmList.forEach(vm ->
+        vmList.forEach(vm ->
             System.out.printf(
                 "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). RAM usage: %.2f%% (%d MB)%n",
                 evt.getTime(), vm.getId(), vm.getCpuPercentUtilization()*100.0, vm.getNumberOfPes(),
                 vm.getCloudletScheduler().getCloudletExecList().size(),
                 vm.getRam().getPercentUtilization()*100, vm.getRam().getAllocatedResource())
         );
-        System.out.println("allocatedResource " + vmList.get(0).getPeVerticalScaling().getAllocatedResource());
+        /*System.out.println("allocatedResource " + vmList.get(0).getPeVerticalScaling().getAllocatedResource());
         System.out.println("PES x util = " + vmList.get(0).getNumberOfPes()*vmList.get(0).getCpuPercentUtilization());*/
         //统计sla违反率
         
@@ -242,6 +242,7 @@ public class VerticalVmCpuScalingExampleRevised {
 
         int nowTime = (int) evt.getTime();
         recordCpu.add(vmList.get(0).getCpuPercentUtilization());
+        //System.out.println("util " + vmList.get(0).getCpuPercentUtilization());
         recordRam.add(vmList.get(0).getRam().getPercentUtilization());
         int sample_interval = 1;
         if(nowTime % sample_interval == 0 && nowTime != lastTime && nowTime < sample_interval * 9000){

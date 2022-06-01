@@ -50,13 +50,13 @@ public class SlaStatistic {
                     TOTAL_SAMPLE += 1.;
                     double execTime = newCloudlet.getFinishTime() - newCloudlet.getCloudletArrivalTime();
                     if (execTime < RT_MIN || execTime > RT_MAX || vmUtil < UTILIZATION_MIN || vmUtil > UTILIZATION_MAX){
-                        System.out.println("execTime " + execTime);
+                        /*System.out.println("execTime " + execTime);
                         System.out.printf("execTime < RT_MIN %b || execTime > RT_MAX %b || vmUtil < UTILIZATION_MIN %b || vmUtil > UTILIZATION_MAX %b%n",
                                             execTime < RT_MIN, 
                                             execTime > RT_MAX, 
                                             vmUtil < UTILIZATION_MIN, 
                                             vmUtil > UTILIZATION_MAX
-                                            );
+                                            );*/
                         VIOLATE_SAMPLE += 1.;
                     }
                 }
