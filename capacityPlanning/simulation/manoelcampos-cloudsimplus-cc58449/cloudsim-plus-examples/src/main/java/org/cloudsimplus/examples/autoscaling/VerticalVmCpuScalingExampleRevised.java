@@ -39,6 +39,7 @@ import org.cloudbus.cloudsim.provisioners.ResourceProvisionerSimple;
 import org.cloudbus.cloudsim.resources.Pe;
 import org.cloudbus.cloudsim.resources.PeSimple;
 import org.cloudbus.cloudsim.resources.Processor;
+import org.cloudbus.cloudsim.resources.Ram;
 import org.cloudbus.cloudsim.schedulers.cloudlet.CloudletSchedulerTimeShared;
 import org.cloudbus.cloudsim.schedulers.vm.VmSchedulerTimeShared;
 import org.cloudbus.cloudsim.utilizationmodels.UtilizationModel;
@@ -242,7 +243,6 @@ public class VerticalVmCpuScalingExampleRevised {
 
         int nowTime = (int) evt.getTime();
         recordCpu.add(vmList.get(0).getCpuPercentUtilization());
-        //System.out.println("util " + vmList.get(0).getCpuPercentUtilization());
         recordRam.add(vmList.get(0).getRam().getPercentUtilization());
         int sample_interval = 1;
         if(nowTime % sample_interval == 0 && nowTime != lastTime && nowTime < sample_interval * 9000){
@@ -313,9 +313,9 @@ public class VerticalVmCpuScalingExampleRevised {
         for (int i = 0; i < numberOfVms; i++) {
             Vm vm = createVm();
             vm.setPeVerticalScaling(createVerticalPeScaling());
+            //.setRamVerticalScaling(createVerticalRamScaling());
             newList.add(vm);
         }
-
         return newList;
     }
 
@@ -386,6 +386,21 @@ public class VerticalVmCpuScalingExampleRevised {
         return verticalCpuScaling;
     }
 
+    private VerticalVmScaling createVerticalRamScaling() {
+        double scalingFactor = 0.1;
+        VerticalVmScalingSimple verticalRamScaling = new VerticalVmScalingSimple(Ram.class, scalingFactor);
+        /* By uncommenting the line below, you will see that, instead of gradually
+         * increasing or decreasing the RAM, when the scaling object detects
+         * the RAM usage is above or below the defined thresholds,
+         * it will automatically calculate the amount of RAM to add/remove to
+         * move the VM from the over or underload condition.
+        */
+        verticalRamScaling.setResourceScaling(new ResourceScalingInstantaneous());
+        verticalRamScaling.setLowerThresholdFunction(this::lowerRamUtilizationThreshold);
+        verticalRamScaling.setUpperThresholdFunction(this::upperRamUtilizationThreshold);
+        return verticalRamScaling;
+    }
+
     /**
      * Defines the minimum CPU utilization percentage that indicates a Vm is underloaded.
      * This function is using a statically defined threshold, but it would be defined
@@ -399,7 +414,7 @@ public class VerticalVmCpuScalingExampleRevised {
      * @see #createVerticalPeScaling()
      */
     private double lowerCpuUtilizationThreshold(Vm vm) {
-        return 0.2;
+        return 0.4;
     }
 
     /**
@@ -416,6 +431,14 @@ public class VerticalVmCpuScalingExampleRevised {
      */
     private double upperCpuUtilizationThreshold(Vm vm) {
         return 0.8;
+    }
+
+    private double lowerRamUtilizationThreshold(Vm vm) {
+        return 0.5;
+    }
+
+    private double upperRamUtilizationThreshold(Vm vm) {
+        return 0.7;
     }
 
     /**
@@ -480,7 +503,8 @@ public class VerticalVmCpuScalingExampleRevised {
         
         int number = getRand.nextInt(9); 
         final UtilizationModel utilizationCpu = UtilizationModelPlanetLab.getInstance(TRACE_FILE_CPU[number], SCHEDULING_INTERVAL);
-        final UtilizationModel utilizationMem = UtilizationModelPlanetLab.getInstance(TRACE_FILE_MEM[number], SCHEDULING_INTERVAL);
+        final UtilizationModel utilizationMem = UtilizationModelPlanetLab.getInstance(TRACE_FILE_MEM[number], SCHEDULING_INTERVAL, Unit.ABSOLUTE);
+        
         /**
          * Since BW e RAM are shared resources that don't enable preemption,
          * two Cloudlets can't use the same portion of such resources at the same time

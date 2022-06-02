@@ -115,7 +115,10 @@ public class UtilizationModelPlanetLab extends UtilizationModelAbstract {
     public static UtilizationModelPlanetLab getInstance(final String workloadFilePath, final double schedulingInterval) {
         return new UtilizationModelPlanetLab(newReader(workloadFilePath), schedulingInterval, -1);
     }
-
+    //wxh
+    public static UtilizationModelPlanetLab getInstance(final String workloadFilePath, final double schedulingInterval, Unit unit) {
+        return new UtilizationModelPlanetLab(newReader(workloadFilePath), schedulingInterval, -1, unit);
+    }
     /**
      * Instantiates a PlanetLab utilization model from a trace
      * file located <b>inside the application's resource directory</b>.
@@ -166,7 +169,6 @@ public class UtilizationModelPlanetLab extends UtilizationModelAbstract {
     {
         this(workloadFilePath, schedulingInterval, -1);
     }
-
     /**
      * Instantiates a new PlanetLab resource utilization model from a trace
      * file <b>outside</b> the application's resource directory.
@@ -197,6 +199,15 @@ public class UtilizationModelPlanetLab extends UtilizationModelAbstract {
         final int dataSamples) throws NumberFormatException
     {
         this(reader, schedulingInterval, dataSamples, UnaryOperator.identity());
+    }
+    //wxh
+    private UtilizationModelPlanetLab(
+        final InputStreamReader reader,
+        final double schedulingInterval,
+        final int dataSamples,
+        final Unit unit) throws NumberFormatException
+    {
+        this(reader, schedulingInterval, dataSamples, UnaryOperator.identity(), unit);
     }
 
     /**
@@ -272,11 +283,26 @@ public class UtilizationModelPlanetLab extends UtilizationModelAbstract {
         final UnaryOperator<Double> mapper) throws NumberFormatException
     {
         super();
+        
         setSchedulingInterval(schedulingInterval);
         this.mapper = Objects.requireNonNull(mapper);
         utilization = readWorkloadFile(reader, dataSamples);
     }
-
+    //wxh
+    private UtilizationModelPlanetLab(
+        final InputStreamReader reader,
+        final double schedulingInterval,
+        final int dataSamples,
+        final UnaryOperator<Double> mapper,
+        final Unit unit) throws NumberFormatException
+    {
+        super(unit);
+        
+        setSchedulingInterval(schedulingInterval);
+        this.mapper = Objects.requireNonNull(mapper);
+        utilization = readWorkloadFile(reader, dataSamples, unit);
+    }
+    //
     private static InputStreamReader newReader(final String workloadFilePath) {
         return ResourceLoader.newInputStreamReader(workloadFilePath, UtilizationModelPlanetLab.class);
     }
@@ -317,6 +343,34 @@ public class UtilizationModelPlanetLab extends UtilizationModelAbstract {
 
                 if(!isComment(line)) {
                     utilization[lineNum++] = mapper.apply(Double.parseDouble(line) / 100.0);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        return utilization;
+    }
+
+    private double[] readWorkloadFile(final InputStreamReader reader, int dataSamples, Unit unit) {
+        Objects.requireNonNull(reader);
+        double[] utilization = {0};
+
+        try (var buffer = new BufferedReader(reader)) {
+            int lineNum = 0;
+            String line;
+            while((line=buffer.readLine())!=null && lineNum < utilization.length){
+                if(lineNum == 0){
+                    dataSamples = parseDataSamples(line, dataSamples);
+                    utilization = createEmptyArray(dataSamples);
+                }
+
+                if(!isComment(line)) {
+                    if (unit == Unit.PERCENTAGE){
+                        utilization[lineNum++] = mapper.apply(Double.parseDouble(line) / 100.0);
+                    }else{
+                        utilization[lineNum++] = mapper.apply(Double.parseDouble(line));
+                    }
                 }
             }
         } catch (IOException e) {
