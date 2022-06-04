@@ -230,10 +230,13 @@ public class VerticalVmCpuScalingExampleRevised {
     private void onClockTickListener(EventInfo evt) {
         vmList.forEach(vm ->
             System.out.printf(
-                "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). RAM usage: %.2f%% (%d MB)%n",
+                "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                 evt.getTime(), vm.getId(), vm.getCpuPercentUtilization()*100.0, vm.getNumberOfPes(),
                 vm.getCloudletScheduler().getCloudletExecList().size(),
-                vm.getRam().getPercentUtilization()*100, vm.getRam().getAllocatedResource())
+                vm.getRam().getPercentUtilization()*100, vm.getRam().getAllocatedResource(), vm.getRam().getCapacity(),
+                vm.getHost().getRam().getPercentUtilization() * 100,
+                vm.getHost().getRam().getAllocatedResource(),
+                vm.getHost().getRam().getCapacity())
         );
         /*System.out.println("allocatedResource " + vmList.get(0).getPeVerticalScaling().getAllocatedResource());
         System.out.println("PES x util = " + vmList.get(0).getNumberOfPes()*vmList.get(0).getCpuPercentUtilization());*/
@@ -312,8 +315,8 @@ public class VerticalVmCpuScalingExampleRevised {
         List<Vm> newList = new ArrayList<>(numberOfVms);
         for (int i = 0; i < numberOfVms; i++) {
             Vm vm = createVm();
-            vm.setPeVerticalScaling(createVerticalPeScaling());
-            //.setRamVerticalScaling(createVerticalRamScaling());
+            vm.setPeVerticalScaling(createVerticalPeScaling())
+            .setRamVerticalScaling(createVerticalRamScaling());
             newList.add(vm);
         }
         return newList;

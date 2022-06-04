@@ -30,6 +30,7 @@ import org.cloudbus.cloudsim.resources.*;
 import org.cloudbus.cloudsim.vms.Vm;
 import org.cloudsimplus.autoscaling.resources.ResourceScaling;
 import org.cloudsimplus.autoscaling.resources.ResourceScalingGradual;
+import org.cloudbus.cloudsim.resources.Ram;
 
 /**
  * A {@link VerticalVmScaling} implementation which allows a {@link DatacenterBroker}
@@ -78,7 +79,6 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
                     getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource());*/
                     lastTime = (int) getVm().getSimulation().clock();
             }
-            
             double latestPercentage = lastMipsUsage * 1 / lastPeUsage * getPePercentage();
             if (cpuPercentage != 0. && runningCloudlet != 0 && getPePercentage() != 0.){
                 lastMipsUsage = cpuPercentage;
@@ -109,8 +109,9 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             return false;
         }*/
         }else{
-            
+            //return getVm().getRam().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
             return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
+            
         }
     }
 
@@ -128,7 +129,8 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             
             return latestPercentage > getUpperThresholdFunction().apply(getVm());
         }else{
-            return getResource().getPercentUtilization() > getLowerThresholdFunction().apply(getVm());
+            return getResource().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
+            //return getVm().getRam().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
         }
     }
 

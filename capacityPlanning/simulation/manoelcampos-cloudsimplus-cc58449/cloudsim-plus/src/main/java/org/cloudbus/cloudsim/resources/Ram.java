@@ -38,4 +38,5 @@ public final class Ram extends ResourceManageableAbstract {
     public Ram(final long capacity) {
         super(capacity, "MB");
     }
+
 }

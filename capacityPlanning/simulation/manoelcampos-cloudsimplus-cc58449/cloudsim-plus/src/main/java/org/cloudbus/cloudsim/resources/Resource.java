@@ -25,7 +25,9 @@ public interface Resource extends ResourceCapacity {
      * An attribute that implements the Null Object Design Pattern for {@link Resource}
      * objects.
      */
+
     Resource NULL = new ResourceNull();
+    
 
     /**
      * Checks if this object is instance of a given class.
