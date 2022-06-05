@@ -7,6 +7,9 @@
  */
 package org.cloudbus.cloudsim.resources;
 
+import org.cloudbus.cloudsim.hosts.Host;
+import org.cloudbus.cloudsim.vms.Vm;
+
 /**
  * A class that represents simple resources such as RAM, CPU, Bandwidth or Pe.
  * It stores, for instance, the resource capacity and amount of free available resource.
@@ -114,11 +117,13 @@ public abstract class ResourceManageableAbstract extends ResourceAbstract implem
         if(amountToAllocate <= 0 || !isAmountAvailable(amountToAllocate)) {
             return false;
         }
-
-        final long newAvailableResource = getAvailableResource() - amountToAllocate;
-
+        //wxh暂时先用着，不适合多v吗，但是如果只监控单个vm的利用率还是可以的
+        //final long newAvailableResource = getAvailableResource() - amountToAllocate;
+        final long newAvailableResource = getCapacity() - amountToAllocate;
+        
         return setAvailableResource(newAvailableResource);
     }
+
 
     @Override
     public boolean setAllocatedResource(final long newTotalAllocatedResource) {

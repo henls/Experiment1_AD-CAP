@@ -195,10 +195,15 @@ public abstract class VmAllocationPolicyAbstract implements VmAllocationPolicy {
     private boolean downScaleVmNonCpuResource(final VerticalVmScaling scaling) {
         final var resourceManageableClass = scaling.getResourceClass();
         final var vmResource = scaling.getVm().getResource(resourceManageableClass);
-        System.out.println(vmResource);
         final double amountToDeallocate = scaling.getResourceAmountToScale();
         final var resourceProvisioner = scaling.getVm().getHost().getProvisioner(resourceManageableClass);
-        final double newTotalVmResource = vmResource.getCapacity() - amountToDeallocate;
+        //wxh
+        final double newTotalVmResource;
+        if (amountToDeallocate > 0.){
+            newTotalVmResource = vmResource.getCapacity() - amountToDeallocate;
+        }else{
+            newTotalVmResource = vmResource.getCapacity() + amountToDeallocate;
+        }
         if (resourceProvisioner.allocateResourceForVm(scaling.getVm(), newTotalVmResource)) {
             LOGGER.info(
                 "{}: {}: {} {} deallocated from {}: new capacity is {}. Current resource usage is {}%",

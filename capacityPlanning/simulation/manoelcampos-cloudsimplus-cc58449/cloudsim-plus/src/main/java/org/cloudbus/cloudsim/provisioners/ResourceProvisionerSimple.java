@@ -68,7 +68,7 @@ public class ResourceProvisionerSimple extends ResourceProvisionerAbstract {
             //De-allocates any amount of the resource assigned to the Vm in order to allocate a new capacity
             deallocateResourceForVm(vm);
         }
-
+        
         /*
         Pe resources are not stored in the VM resource List.
         Only the provisioner keeps track of Pe allocation for VM.
@@ -78,8 +78,8 @@ public class ResourceProvisionerSimple extends ResourceProvisionerAbstract {
         if(!getPmResource().isSubClassOf(Pe.class) && !vmResource.setCapacity(newTotalVmResourceCapacity)){
             return false;
         }
-
         //Allocates the requested resource from the physical resource
+        //getPmResource().allocateResource(prevVmResourceAllocation - newTotalVmResourceCapacity);
         getPmResource().allocateResource(newTotalVmResourceCapacity);
         vmResource.setCapacity(newTotalVmResourceCapacity);
         vmResource.setAllocatedResource(newTotalVmResourceCapacity);

@@ -228,7 +228,7 @@ public class VerticalVmCpuScalingExampleRevised {
      * @param evt information about the event happened (that for this Listener is just the simulation time)
      */
     private void onClockTickListener(EventInfo evt) {
-        vmList.forEach(vm ->
+        /*vmList.forEach(vm ->
             System.out.printf(
                 "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                 evt.getTime(), vm.getId(), vm.getCpuPercentUtilization()*100.0, vm.getNumberOfPes(),
@@ -237,7 +237,7 @@ public class VerticalVmCpuScalingExampleRevised {
                 vm.getHost().getRam().getPercentUtilization() * 100,
                 vm.getHost().getRam().getAllocatedResource(),
                 vm.getHost().getRam().getCapacity())
-        );
+        );*/
         /*System.out.println("allocatedResource " + vmList.get(0).getPeVerticalScaling().getAllocatedResource());
         System.out.println("PES x util = " + vmList.get(0).getNumberOfPes()*vmList.get(0).getCpuPercentUtilization());*/
         //统计sla违反率
@@ -315,8 +315,8 @@ public class VerticalVmCpuScalingExampleRevised {
         List<Vm> newList = new ArrayList<>(numberOfVms);
         for (int i = 0; i < numberOfVms; i++) {
             Vm vm = createVm();
-            vm.setPeVerticalScaling(createVerticalPeScaling())
-            .setRamVerticalScaling(createVerticalRamScaling());
+            vm.setPeVerticalScaling(createVerticalPeScaling());
+            //.setRamVerticalScaling(createVerticalRamScaling());
             newList.add(vm);
         }
         return newList;
@@ -398,7 +398,8 @@ public class VerticalVmCpuScalingExampleRevised {
          * it will automatically calculate the amount of RAM to add/remove to
          * move the VM from the over or underload condition.
         */
-        verticalRamScaling.setResourceScaling(new ResourceScalingInstantaneous());
+        //verticalRamScaling.setResourceScaling(new ResourceScalingInstantaneous());
+        verticalRamScaling.setResourceScaling(vs -> 1);
         verticalRamScaling.setLowerThresholdFunction(this::lowerRamUtilizationThreshold);
         verticalRamScaling.setUpperThresholdFunction(this::upperRamUtilizationThreshold);
         return verticalRamScaling;

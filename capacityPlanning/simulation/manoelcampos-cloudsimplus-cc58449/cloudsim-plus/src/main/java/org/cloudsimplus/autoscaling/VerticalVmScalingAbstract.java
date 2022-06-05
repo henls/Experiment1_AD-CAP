@@ -219,7 +219,6 @@ public abstract class VerticalVmScalingAbstract extends VmScalingAbstract implem
      */
     @Override
     public double getResourceAmountToScale() {
-        System.out.println(resourceScaling.getResourceAmountToScale(this));
         return Math.ceil(resourceScaling.getResourceAmountToScale(this));
     }
 

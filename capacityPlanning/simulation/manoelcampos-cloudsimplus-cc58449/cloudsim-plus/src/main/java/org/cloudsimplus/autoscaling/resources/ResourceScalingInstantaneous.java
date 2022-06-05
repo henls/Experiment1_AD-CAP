@@ -69,13 +69,14 @@ public class ResourceScalingInstantaneous implements ResourceScaling {
         final Resource res = vmScaling.getVm().getResource(vmScaling.getResourceClass());
         //The new total capacity to move the VM resource from under/overloaded.
         final double newTotalCapacity = Math.ceil(res.getAllocatedResource() / thresholdFunc.apply(vmScaling.getVm()));
+        
         //The difference to add/remove from the current capacity so that the resource capacity will be equal to that just computed.
         final double scaleCapacity = newTotalCapacity - res.getCapacity();
-
         /*Includes and additional resource amount for safety, according to the scaling factor.
         * This way, if the resource usage increases again up to this extra amount,
         * there is no need to re-scale the resource.
         * If the scale factor is zero, no extra safety amount is included.*/
+        //wxh 这里也有问题，得到的还是null
         final double extraSafetyCapacity = GRADUAL.getResourceAmountToScale(vmScaling);
         return scaleCapacity + extraSafetyCapacity;
     }

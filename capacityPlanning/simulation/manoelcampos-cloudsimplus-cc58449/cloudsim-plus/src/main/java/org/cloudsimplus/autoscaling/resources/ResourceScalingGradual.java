@@ -45,5 +45,6 @@ public class ResourceScalingGradual implements ResourceScaling {
     @Override
     public double getResourceAmountToScale(VerticalVmScaling vmScaling) {
         return vmScaling.getResource().getCapacity() * vmScaling.getScalingFactor();
+        //return vmScaling.getVm().getResource(vmScaling.getResourceClass()).getCapacity() * vmScaling.getScalingFactor();
     }
 }

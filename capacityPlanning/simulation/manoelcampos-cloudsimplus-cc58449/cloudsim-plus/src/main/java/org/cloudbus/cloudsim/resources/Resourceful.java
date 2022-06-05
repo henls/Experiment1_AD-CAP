@@ -47,11 +47,6 @@ public interface Resourceful {
      * @return the {@link Resource} corresponding to the given class
      */
     default ResourceManageable getResource(final Class<? extends ResourceManageable> resourceClass){
-        System.out.println(getResources()
-        .stream()
-        .filter(resource -> resource.isSubClassOf(resourceClass))
-        .findFirst()
-        .orElse(ResourceManageable.NULL));
         return getResources()
                 .stream()
                 .filter(resource -> resource.isSubClassOf(resourceClass))

@@ -16,8 +16,8 @@ public class SlaStatistic {
     /*
         默认参数列表
     */
-    int RT_MAX = 7000; //RT:response time and unit is senond
-    int RT_MIN = 5000;
+    int RT_MAX = 300; //RT:response time and unit is senond
+    int RT_MIN = 200;
     int UTILIZATION_MAX = 90;
     int UTILIZATION_MIN = 0;
     double TOTAL_SAMPLE = 0. + 1e-8;//总的采样数

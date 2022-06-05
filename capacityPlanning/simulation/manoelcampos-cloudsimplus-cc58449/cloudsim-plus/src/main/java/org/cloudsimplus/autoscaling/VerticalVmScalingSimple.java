@@ -77,6 +77,14 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
                     getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
                     getVm().getCloudletScheduler().getCloudletExecList().size(),
                     getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource());*/
+            System.out.printf(
+                        "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
+                        getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
+                        getVm().getCloudletScheduler().getCloudletExecList().size(),
+                        getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource(), getVm().getRam().getCapacity(),
+                        getVm().getHost().getRam().getPercentUtilization() * 100,
+                        getVm().getHost().getRam().getAllocatedResource(),
+                        getVm().getHost().getRam().getCapacity());
                     lastTime = (int) getVm().getSimulation().clock();
             }
             double latestPercentage = lastMipsUsage * 1 / lastPeUsage * getPePercentage();
@@ -109,8 +117,8 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             return false;
         }*/
         }else{
-            //return getVm().getRam().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
-            return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
+            return getVm().getRam().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
+            //return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
             
         }
     }
@@ -129,8 +137,8 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             
             return latestPercentage > getUpperThresholdFunction().apply(getVm());
         }else{
-            return getResource().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
-            //return getVm().getRam().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
+            //return getResource().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
+            return getVm().getRam().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
         }
     }
 

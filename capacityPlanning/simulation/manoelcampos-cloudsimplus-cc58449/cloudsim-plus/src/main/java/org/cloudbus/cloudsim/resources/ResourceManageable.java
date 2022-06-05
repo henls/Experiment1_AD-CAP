@@ -7,6 +7,8 @@
  */
 package org.cloudbus.cloudsim.resources;
 
+import org.cloudbus.cloudsim.vms.Vm;
+
 /**
  * An interface to represent a physical or virtual resource (like RAM, CPU or
  * Bandwidth) with features to manage resource capacity and allocation.
