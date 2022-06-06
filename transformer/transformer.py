@@ -89,7 +89,7 @@ def get_data():
     #series = pd.read_csv('./000001_Daily.csv', usecols=['Close'])
     #series = pd.read_csv('./data/1863690462_1_9260_.csv').iloc[:, 5]
     series = pd.read_csv(
-    '/home/wxh/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample_no_anomaly.csv'
+    '../capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample_no_anomaly.csv'
     ).iloc[:, 1]
     global resource_type 
     resource_type = series.name
@@ -191,7 +191,7 @@ def readMinLoss(file):
     loss = re.findall('\d+.\d+', loss)[0]
     print('min loss is ' + loss)
     return float(loss)
-load = True
+load = False
 load_model = r'./pkl/mean cpu usage/transformer.pt'
 train_data, val_data = get_data()
 model = TransAm().to(device)
@@ -206,7 +206,7 @@ epochs = 1000  # The number of epochs
 
 plot_freq = 20
 plot_spans = 20# 原数据太长，分成plot_spans段分别画出来
-valid_loss_min = readMinLoss('/home/wxh/transformer/pkl/mean cpu usage/loss.txt')
+valid_loss_min = readMinLoss('./pkl/mean cpu usage/loss.txt')
 model_save = r'./pkl'
 global resource_type
 
@@ -240,6 +240,6 @@ for epoch in range(1, epochs + 1):
         except Exception as e:
             pass
         torch.save(model.state_dict(), savePth + '/transformer.pt')
-        print('#INFO model saved loss is ' + val_loss)
+        print('#INFO model saved loss is ' + str(val_loss))
         with open(savePth + '/loss.txt', 'w') as f:
             f.write('loss_min: {}'.format(valid_loss_min))

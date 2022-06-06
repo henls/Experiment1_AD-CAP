@@ -99,7 +99,7 @@ def get_data():
     #series = pd.read_csv('./000001_Daily.csv', usecols=['Close'])
     #series = pd.read_csv('./data/1863690462_1_9260_.csv').iloc[:, [4, 5]]
     series = pd.read_csv(
-    '/home/wxh/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample.csv'
+    '../capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample.csv'
     ).iloc[:, [1,2]]
     global resource_type 
     resource_type = series.columns
