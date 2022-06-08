@@ -36,12 +36,11 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-
         return x + self.pe[:x.size(0), :]
 
 #feature_size:词特征向量的维度
 class TransAm(nn.Module):
-    def __init__(self, feature_size=64, num_layers=3, dropout=0.5):
+    def __init__(self, feature_size=128, num_layers=3, dropout=0.5):
         super(TransAm, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
@@ -50,6 +49,8 @@ class TransAm(nn.Module):
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
         self.decoder = nn.Linear(feature_size, 1)
         self.init_weights()
+        self.embedding = nn.Linear(1, feature_size)
+
 
     def init_weights(self):
         initrange = 0.1
@@ -62,8 +63,9 @@ class TransAm(nn.Module):
             mask = self._generate_square_subsequent_mask(len(src)).to(device)
             self.src_mask = mask
         #30x64x1
+        src = self.embedding(src)
         src = self.pos_encoder(src)
-        #30x64x250
+        #30x64x128
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
         #30x64x1 seq2seq
@@ -90,7 +92,7 @@ def get_data():
     #series = pd.read_csv('./data/1863690462_1_9260_.csv').iloc[:, 5]
     series = pd.read_csv(
     '../capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample_no_anomaly.csv'
-    ).iloc[:, 1]
+    ).iloc[:500, 1]
     global resource_type 
     resource_type = series.name
     if resource_type != load_model.split('/')[2]:
@@ -113,9 +115,8 @@ def get_data():
     return train_sequence.to(device), test_data.to(device)
 
 def get_batch(source, i, batch_size):
-    seq_len = min(batch_size, len(source) - 1 - i)
+    seq_len = min(batch_size, len(source) - 1 - i) # min(batch_size, 剩余数据长度)
     data = source[i:i + seq_len]
-    
     input = torch.stack(torch.stack([item[0] for item in data]).chunk(input_window, 1))  # 1 is feature size
     target = torch.stack(torch.stack([item[1] for item in data]).chunk(input_window, 1))
 
@@ -239,7 +240,7 @@ for epoch in range(1, epochs + 1):
             os.makedirs(savePth)
         except Exception as e:
             pass
-        torch.save(model.state_dict(), savePth + '/transformer.pt')
+        torch.save(model.state_dict(), savePth + '/' + str(epoch) + 'transformer.pt')
         print('#INFO model saved loss is ' + str(val_loss))
         with open(savePth + '/loss.txt', 'w') as f:
             f.write('loss_min: {}'.format(valid_loss_min))
