@@ -237,10 +237,10 @@ def optimize_model():
     for param in policy_net.parameters():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
-reward_total = 0
 num_episodes = 50
 for i_episode in range(num_episodes):
     # Initialize the environment and state
+    reward_total = 0
     env.reset()
     last_screen = get_screen()
     current_screen = get_screen()
@@ -269,7 +269,7 @@ for i_episode in range(num_episodes):
         optimize_model()
         if done:
             episode_durations.append(t + 1)
-            plot_durations()
+            #plot_durations()
             break
     print("Epoch {} | Total reward is {}".format(i_episode, reward_total))
     # Update the target network, copying all weights and biases in DQN

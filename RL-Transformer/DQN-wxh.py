@@ -90,14 +90,14 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:x.size(0), :].reshape(-1, 1, 1, self.h, self.w)
 
 class TransAm(nn.Module):
-    def __init__(self, h, w, outputs, d_model, feature_size=32, num_layers=6, dropout=0.1):
+    def __init__(self, h, w, outputs, d_model, feature_size=32, num_layers=4, dropout=0.1):
         super(TransAm, self).__init__()
         global max_length
         assert d_model == h * w
         self.model_type = 'Transformer'
         self.src_mask = None
         self.pos_encoder = PositionalEncoding(d_model, h, w)
-        self.encoder_layer = nn.TransformerEncoderLayer(feature_size, nhead=8, dropout=dropout)
+        self.encoder_layer = nn.TransformerEncoderLayer(feature_size, nhead=4, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
         #self.decoder = nn.Linear(feature_size, 2)
         #self.init_weights()
@@ -307,13 +307,16 @@ def optimize_model():
     optimizer.zero_grad()
     loss.backward()
     '''for param in policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)'''
+        try:
+            param.grad.data.clamp_(-1, 1)
+        except Exception as e:
+            pass'''
     optimizer.step()
-reward_total = 0
 num_episodes = 50
 sequenceState = SequenceStates(max_length)
 for i_episode in range(num_episodes):
     # Initialize the environment and state
+    reward_total = 0
     env.reset()
     last_screen = get_screen()
     current_screen = get_screen()
@@ -346,9 +349,9 @@ for i_episode in range(num_episodes):
         optimize_model()
         if done:
             episode_durations.append(t + 1)
-            plot_durations()
+            #plot_durations()
             break
-    print("Total reward is " + str(reward_total))
+    print("Epoch {} | Total reward is {}".format(i_episode ,reward_total))
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
