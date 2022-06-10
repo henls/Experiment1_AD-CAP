@@ -1,3 +1,4 @@
+#使用图片作为状态空间
 import gym
 import math
 import random
@@ -15,6 +16,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 
+from line_profiler import LineProfiler
 ############################################ init #################################
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ['CUDA_VISIBLE_DEVICES'] = "1"
@@ -131,8 +133,11 @@ class TransAm(nn.Module):
         src = src.view(max_length, -1, src.shape[2], src.shape[3], src.shape[4])
         src = self.pos_encoder(src)
         src_cat = []
+        src_chunk = src.chunk(src.shape[1], 1)
+        src_chunk = [i.squeeze() for i in src_chunk]
         for i in range(0, src.shape[1]):
-            x = F.relu(self.bn1(self.conv1(src[:, i])))
+            #x = F.relu(self.bn1(self.conv1(src[:, i])))
+            x = F.relu(self.bn1(self.conv1(src_chunk[i])))
             x = F.relu(self.bn2(self.conv2(x)))
             x = F.relu(self.bn3(self.conv3(x)))
             x = self.to_feature(x.view(x.size(0), -1))
@@ -264,6 +269,7 @@ def plot_durations():
         display.display(plt.gcf())
 
 ############################################ Training loop #################################
+
 def optimize_model():
     if len(memory) < BATCH_SIZE:
         return
@@ -312,7 +318,7 @@ def optimize_model():
         except Exception as e:
             pass'''
     optimizer.step()
-num_episodes = 50
+num_episodes = 500
 sequenceState = SequenceStates(max_length)
 for i_episode in range(num_episodes):
     # Initialize the environment and state
@@ -355,6 +361,7 @@ for i_episode in range(num_episodes):
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
+
 
 print('Complete')
 env.render()

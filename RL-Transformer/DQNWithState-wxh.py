@@ -16,10 +16,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 
+from line_profiler import LineProfiler
 ############################################ init #################################
 os.environ["SDL_VIDEODRIVER"] = "dummy"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 env = gym.make('CartPole-v0').unwrapped
-
+env.seed(1000)
+max_length = 10
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -49,36 +52,88 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
-############################################ DQN #################################
+################################ Sequence States #################################
+class SequenceStates(object):
+    def __init__(self, max_length):
+        """
+        *输入：： max_length:状态序列的长度
+        *输出：： 当前管道中的状态
+        """
+        self.max_length = max_length
+        self.stats_que = deque([], maxlen= max_length)
 
-class DQN(nn.Module):
+    def push(self, frame):
+        self.stats_que.append(frame)
 
-    def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=5, stride=2)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=2)
-        self.bn3 = nn.BatchNorm2d(32)
+    def get(self):
+        assert self.__len__() == self.max_length
+        return torch.vstack([i for i in self.stats_que]).reshape(self.max_length, -1, len(self.stats_que[0]))
+    
+    def __len__(self):
+        return len(self.stats_que)
 
-        # Number of Linear input connections depends on output of conv2d layers
-        # and therefore the input image size, so compute it.
-        def conv2d_size_out(size, kernel_size = 5, stride = 2):
-            return (size - (kernel_size - 1) - 1) // stride  + 1
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(w)))
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h)))
-        linear_input_size = convw * convh * 32
-        self.head = nn.Linear(linear_input_size, outputs)
+############################################ Transformer #################################
 
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
+class PositionalEncoding(nn.Module):
+
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1) #单词在句子中的位置
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
     def forward(self, x):
-        x = x.to(device)
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
-        return self.head(x.view(x.size(0), -1))
+        return x + self.pe[:x.size(0), :]
+
+class TransAm(nn.Module):
+    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
+        super(TransAm, self).__init__()
+        global max_length
+        self.model_type = 'Transformer'
+        self.src_mask = None
+        self.pos_encoder = PositionalEncoding(d_model)
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model, nhead=1, dropout=dropout)
+        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        #self.decoder = nn.Linear(feature_size, 2)
+        #self.init_weights()
+        self.fc1 = nn.Linear(N_STATES,16) # 4->16
+        self.fc1.weight.data.normal_(0, 0.1)
+        self.fc2 = nn.Linear(16, d_model) # 16 -> 32
+        self.fc2.weight.data.normal_(0, 0.1)
+        self.fc3 = nn.Linear(d_model, d_model) # 32 -> 32
+        self.fc3.weight.data.normal_(0, 0.1)
+        self.out1 = nn.Linear(d_model, outputs)
+        self.out1.weight.data.normal_(0, 0.1)
+
+
+    '''def init_weights(self):
+        initrange = 0.1
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)'''
+
+    def forward(self, src):
+        if self.src_mask is None or self.src_mask.size(0) != len(src):
+            mask = self._generate_square_subsequent_mask(max_length).to(device)
+            self.src_mask = mask
+        
+        src = F.relu(self.fc1(src))
+        src = F.relu(self.fc2(src))
+        src = F.relu(self.fc3(src))
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src, self.src_mask)
+        #10x128x32
+        output = self.out1(output[-1, :, :])
+        #output = self.decoder(output)
+        return output
+
+    def _generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
 
 ############################################ Input extraction #################################
 
@@ -92,42 +147,10 @@ def get_cart_location(screen_width):
     scale = screen_width / world_width
     return int(env.state[0] * scale + screen_width / 2.0)  # MIDDLE OF CART
 
-def get_screen():
-    # Returned screen requested by gym is 400x600x3, but is sometimes larger
-    # such as 800x1200x3. Transpose it into torch order (CHW).
-    screen = env.render(mode='rgb_array').transpose((2, 0, 1))
-    # Cart is in the lower half, so strip off the top and bottom of the screen
-    _, screen_height, screen_width = screen.shape
-    screen = screen[:, int(screen_height*0.4):int(screen_height * 0.8)]
-    view_width = int(screen_width * 0.6)
-    cart_location = get_cart_location(screen_width)
-    if cart_location < view_width // 2:
-        slice_range = slice(view_width)
-    elif cart_location > (screen_width - view_width // 2):
-        slice_range = slice(-view_width, None)
-    else:
-        slice_range = slice(cart_location - view_width // 2,
-                            cart_location + view_width // 2)
-    # Strip off the edges, so that we have a square image centered on a cart
-    screen = screen[:, :, slice_range]
-    # Convert to float, rescale, convert to torch tensor
-    # (this doesn't require a copy)
-    screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
-    screen = torch.from_numpy(screen)
-    # Resize, and add a batch dimension (BCHW)
-    return resize(screen).unsqueeze(0)
-
-
-env.reset()
-plt.figure()
-plt.imshow(get_screen().cpu().squeeze(0).permute(1, 2, 0).numpy(),
-           interpolation='none')
-plt.title('Example extracted screen')
-plt.show()
 
 ############################################ Training #################################
-BATCH_SIZE = 128
-GAMMA = 0.999
+BATCH_SIZE = 64
+GAMMA = 0.9
 EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 200
@@ -136,18 +159,19 @@ TARGET_UPDATE = 10
 # Get screen size so that we can initialize layers correctly based on shape
 # returned from AI gym. Typical dimensions at this point are close to 3x40x90
 # which is the result of a clamped and down-scaled render buffer in get_screen()
-init_screen = get_screen()
-_, _, screen_height, screen_width = init_screen.shape
+
+screen_height, screen_width = 1, 4
 
 # Get number of actions from gym action space
 n_actions = env.action_space.n
 
-policy_net = DQN(screen_height, screen_width, n_actions).to(device)
-target_net = DQN(screen_height, screen_width, n_actions).to(device)
+policy_net = TransAm(4, n_actions).to(device)
+target_net = TransAm(4, n_actions).to(device)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.RMSprop(policy_net.parameters())
+#optimizer = optim.RMSprop(policy_net.parameters())
+optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
 memory = ReplayMemory(10000)
 
 
@@ -193,6 +217,7 @@ def plot_durations():
         display.display(plt.gcf())
 
 ############################################ Training loop #################################
+
 def optimize_model():
     if len(memory) < BATCH_SIZE:
         return
@@ -200,15 +225,17 @@ def optimize_model():
     # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
     # detailed explanation). This converts batch-array of Transitions
     # to Transition of batch-arrays.
+    
     batch = Transition(*zip(*transitions))
 
     # Compute a mask of non-final states and concatenate the batch elements
     # (a final state would've been the one after which simulation ended)
     non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                           batch.next_state)), device=device, dtype=torch.bool)
+
     non_final_next_states = torch.cat([s for s in batch.next_state
-                                                if s is not None])
-    state_batch = torch.cat(batch.state)
+                                                if s is not None], dim=1)
+    state_batch = torch.cat(batch.state, dim=1)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
 
@@ -228,35 +255,42 @@ def optimize_model():
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
-    criterion = nn.SmoothL1Loss()
+    #criterion = nn.SmoothL1Loss()
+    criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-
+    #print("loss: ", loss.item())
     # Optimize the model
     optimizer.zero_grad()
     loss.backward()
     for param in policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)
+        try:
+            param.grad.data.clamp_(-1, 1)
+        except Exception as e:
+            pass
     optimizer.step()
-num_episodes = 500
+num_episodes = 1000
+sequenceState = SequenceStates(max_length)
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
-    env.reset()
-    last_screen = get_screen()
-    current_screen = get_screen()
-    state = current_screen - last_screen
+    state = env.reset()
+    state = torch.from_numpy(state).to(device)
+    for i in range(max_length):
+        sequenceState.push(state)
+    state = sequenceState.get()
+    #matplotlib.image.imsave('./state.jpg', np.array(state[0, 0,:,:]))
     for t in count():
         # Select and perform an action
         action = select_action(state)
-        _, reward, done, _ = env.step(action.item())
+        s, reward, done, _ = env.step(action.item())
         reward = torch.tensor([reward], device=device)
         with torch.no_grad():
             reward_total += reward.cpu().item()
         # Observe new state
-        last_screen = current_screen
-        current_screen = get_screen()
+        s = torch.from_numpy(s).to(device)
         if not done:
-            next_state = current_screen - last_screen
+            sequenceState.push(s)
+            next_state = sequenceState.get()
         else:
             next_state = None
 
@@ -272,10 +306,11 @@ for i_episode in range(num_episodes):
             episode_durations.append(t + 1)
             #plot_durations()
             break
-    print("Epoch {} | Total reward is {}".format(i_episode, reward_total))
+    print("Episode {} | Total reward is {} ".format(i_episode ,reward_total))
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
+
 
 print('Complete')
 env.render()

@@ -55,10 +55,13 @@ class TransAm(nn.Module):
             device = src.device
             mask = self._generate_square_subsequent_mask(len(src)).to(device)
             self.src_mask = mask
+        
         src = self.embeding(src)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
+        
         output = self.decoder(output)
+        print(output.shape)
         return output
 
     def _generate_square_subsequent_mask(self, sz):
@@ -78,7 +81,7 @@ def create_inout_sequences(input_data, tw):
 def get_data():
 
     #series = pd.read_csv('./000001_Daily.csv', usecols=['Close'])
-    series = pd.read_csv('./capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample_no_anomaly.csv').iloc[:500, 1]
+    series = pd.read_csv('../capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/resources/workload/sample/sample_no_anomaly.csv').iloc[:500, 1]
     #scaler = MinMaxScaler(feature_range=(-1, 1))
     scaler = StandardScaler()
     series = scaler.fit_transform(series.values.reshape(-1, 1)).reshape(-1)
