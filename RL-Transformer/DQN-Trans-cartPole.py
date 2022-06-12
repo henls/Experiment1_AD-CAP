@@ -2,6 +2,7 @@
 from cProfile import label
 import itertools
 from sys import prefix
+from turtle import forward
 import gym
 import math
 import random
@@ -35,7 +36,6 @@ is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-plt.ion()
 
 # if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -105,35 +105,22 @@ class TransAm(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model, nhead=1, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        #self.decoder = nn.Linear(feature_size, 2)
-        #self.init_weights()
-        self.fc1 = nn.Linear(N_STATES,16) # 4->16
-        self.fc1.weight.data.normal_(0, 0.1)
-        self.fc2 = nn.Linear(16, d_model) # 16 -> 32
-        self.fc2.weight.data.normal_(0, 0.1)
-        self.fc3 = nn.Linear(d_model, d_model) # 32 -> 32
-        self.fc3.weight.data.normal_(0, 0.1)
-        self.out1 = nn.Linear(d_model, outputs)
-        self.out1.weight.data.normal_(0, 0.1)
-
-
-    '''def init_weights(self):
-        initrange = 0.1
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)'''
+        self.fc = nn.Sequential(
+                    nn.Linear(N_STATES,16), 
+                    nn.ReLU(),
+                    nn.Linear(16, d_model),
+                    nn.ReLU(),
+                    nn.Linear(d_model, d_model),
+                    nn.ReLU(),
+                )
 
     def forward(self, src):
         if self.src_mask is None or self.src_mask.size(0) != len(src):
             mask = self._generate_square_subsequent_mask(max_length).to(device)
             self.src_mask = mask
-        src = F.relu(self.fc1(src))
-        src = F.relu(self.fc2(src))
-        src = F.relu(self.fc3(src))
+        src = self.fc(src)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
-        #10x128x32
-        #output = self.out1(output[-1, :, :])#验证cartpole问题
-        #output = self.decoder(output)
         return output
 
     def _generate_square_subsequent_mask(self, sz):
@@ -141,63 +128,32 @@ class TransAm(nn.Module):
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-class DQN(nn.Module):
-    def __init__(self, N_STATES, outputs, ad_model, d_model=32, num_layers=1, dropout=0.):
-        super(DQN, self).__init__()
+class Net(nn.Module):
+    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
+        super(Net, self).__init__()
         self.encoder = TransAm(N_STATES, outputs)
-        self.out1 = nn.Linear(d_model, outputs)
-        self.out1.weight.data.normal_(0, 0.1)
-        self.ad_model = ad_model
-
+        self.DqnOut = nn.Sequential(
+                        nn.Linear(d_model, outputs)
+                        )
+        self.AdOut = nn.Sequential(
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, N_STATES)
+                        )
     def forward(self, x):
-        if dqn_from_ad:
-            self.encoder.load_state_dict(self.ad_model.encoder.state_dict())
-            x = self.encoder(x).detach()
-        else:
-            x = self.encoder(x)
-        
-        '''x = F.relu(self.out1(x[-1, :]))
-        x = F.relu(self.out2(x))
-        x = F.relu(self.out3(x))
-        output = self.out4(x)'''
-        output = self.out1(x[-1, :])
-        return output
-
-class AD(nn.Module):
-    def __init__(self, N_STATES, outputs, RL_model, d_model=32, num_layers=1, dropout=0.5):
-        super(AD, self).__init__()
-        self.encoder = TransAm(N_STATES, outputs, dropout=dropout)
-        self.out1 = nn.Linear(d_model, d_model)
-        self.out1.weight.data.normal_(0, 0.1)
-        self.out2 = nn.Linear(d_model, d_model)
-        self.out2.weight.data.normal_(0, 0.1)
-        self.out3 = nn.Linear(d_model, N_STATES)
-        self.out3.weight.data.normal_(0, 0.1)
-        self.RL_model = RL_model
-    
-    def forward(self, x):
-        if dqn_from_ad:
-            x = self.encoder(x)
-        else:
-            self.encoder.load_state_dict(self.RL_model.encoder.state_dict())
-            x = self.encoder(x).detach()
-        x = F.relu(self.out1(x))
-        x = F.relu(self.out2(x))
-        output = self.out3(x)
-        return output
+        x = self.encoder(x)
+        adout = self.AdOut(x)
+        rlout = self.DqnOut(x[-1, :])
+        return {'rl':rlout, 'ad':adout}
 
 ############################################ Input extraction #################################
-
-resize = T.Compose([T.ToPILImage(),
-                    T.Resize(40, interpolation=Image.CUBIC),
-                    T.ToTensor()])
-
 
 def get_cart_location(screen_width):
     world_width = env.x_threshold * 2
     scale = screen_width / world_width
     return int(env.state[0] * scale + screen_width / 2.0)  # MIDDLE OF CART
-
 
 ############################################ Training #################################
 BATCH_SIZE = 64
@@ -216,29 +172,14 @@ screen_height, screen_width = 1, 4
 # Get number of actions from gym action space
 n_actions = env.action_space.n
 
-if dqn_from_ad:
-    anomaly_net = AD(4, n_actions, []).to(device)
-    policy_net = DQN(4, n_actions, anomaly_net).to(device)
-    target_net = DQN(4, n_actions, anomaly_net).to(device)
-if dqn_from_ad == False:
-    policy_net = DQN(4, n_actions, []).to(device)
-    target_net = DQN(4, n_actions, []).to(device)
-    anomaly_net = AD(4, n_actions, target_net).to(device)
+policy_net = Net(4, n_actions).to(device)
+target_net = Net(4, n_actions).to(device)
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters())
 optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
-
-
-optimizer_ad = optim.Adam(anomaly_net.parameters(), lr = 1e-6)
-scheduler_ad = LambdaLR(optimizer_ad, lr_lambda=lambda t: 0.99**(t/100))
-
-optimizer_merge = optim.Adam([
-    {'params': policy_net.parameters(), 'lr': 1e-3}, 
-    {'params': anomaly_net.parameters(), 'lr': 1e-6}
-    ])
 
 memory = ReplayMemory(10000)
 steps_done = 0
@@ -257,7 +198,7 @@ def select_action(state):
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
-            return policy_net(state).max(1)[1].view(1, 1)
+            return policy_net(state)['rl'].max(1)[1].view(1, 1)
     else:
         explore += 1
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
@@ -274,25 +215,16 @@ def valid_plot(true, pred, episode):
         plt.savefig('graph/transformer-episode{}-{}.png'.format(episode, i))
         plt.close()
 
-episode_durations = []
-
 ############################################ Training loop #################################
 ad_count = 0
 def optimize_model():
     global i_episode, ad_count
-    state_valid_pred = []
-    state_valid_true = []
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
-    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-    # detailed explanation). This converts batch-array of Transitions
-    # to Transition of batch-arrays.
-    
+
     batch = Transition(*zip(*transitions))
 
-    # Compute a mask of non-final states and concatenate the batch elements
-    # (a final state would've been the one after which simulation ended)
     non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                           batch.next_state)), device=device, dtype=torch.bool)
 
@@ -302,33 +234,25 @@ def optimize_model():
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
 
-    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-    # columns of actions taken. These are the actions which would've been taken
-    # for each batch state according to policy_net
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
+    state_action_values = policy_net(state_batch)['rl'].gather(1, action_batch)
 
-    # Compute V(s_{t+1}) for all next states.
-    # Expected values of actions for non_final_next_states are computed based
-    # on the "older" target_net; selecting their best reward with max(1)[0].
-    # This is merged based on the mask, such that we'll have either the expected
-    # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
-    # Compute the expected Q values
+    next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
+
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
     #criterion = nn.SmoothL1Loss()
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-    pred = anomaly_net(state_batch[:, non_final_mask])
+    pred = policy_net(state_batch[:, non_final_mask])['ad']
     loss_ad = criterion(pred, non_final_next_states)
     loss_merge = loss + loss_ad
     # Optimize the model
-    optimizer_merge.zero_grad()
+    optimizer.zero_grad()
     loss_merge.backward()
     if i_episode % 50 == 0 and ad_count == 0:
-        print('AD loss: ', loss_ad.item(), 'lr ', optimizer_ad.param_groups[0]['lr'])
+        print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
         ad_count = 1
         #验证网络预测能力
         valid_plot(non_final_next_states, pred, i_episode)
@@ -337,12 +261,7 @@ def optimize_model():
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
             pass
-    for param in anomaly_net.parameters():
-        try:
-            param.grad.data.clamp_(-1, 1)
-        except Exception as e:
-            pass
-    optimizer_merge.step()
+    optimizer.step()
 num_episodes = 2000
 sequenceState = SequenceStates(max_length)
 for i_episode in range(num_episodes):
@@ -353,7 +272,6 @@ for i_episode in range(num_episodes):
     for i in range(max_length):
         sequenceState.push(state)
     state = sequenceState.get()
-    #matplotlib.image.imsave('./state.jpg', np.array(state[0, 0,:,:]))
     for t in count():
         # Select and perform an action
         action = select_action(state)
@@ -378,8 +296,6 @@ for i_episode in range(num_episodes):
         # Perform one step of the optimization (on the policy network)
         optimize_model()
         if done:
-            episode_durations.append(t + 1)
-            #plot_durations()
             break
     if i_episode % 50 == 0:
         ad_count = 0
@@ -388,9 +304,6 @@ for i_episode in range(num_episodes):
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 
-
 print('Complete')
 env.render()
 env.close()
-plt.ioff()
-plt.show()
