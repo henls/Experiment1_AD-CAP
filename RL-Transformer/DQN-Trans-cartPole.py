@@ -145,23 +145,17 @@ class DQN(nn.Module):
     def __init__(self, N_STATES, outputs, ad_model, d_model=32, num_layers=1, dropout=0.):
         super(DQN, self).__init__()
         self.encoder = TransAm(N_STATES, outputs)
-        self.encoder.load_state_dict(ad_model.encoder.state_dict())
-        #self.out1 = nn.Linear(d_model, 2*d_model)
         self.out1 = nn.Linear(d_model, outputs)
         self.out1.weight.data.normal_(0, 0.1)
-        self.out2 = nn.Linear(2 * d_model, 2 * d_model)
-        self.out2.weight.data.normal_(0, 0.1)
-        self.out3 = nn.Linear(2 * d_model, d_model)
-        self.out3.weight.data.normal_(0, 0.1)
-        self.out4 = nn.Linear(d_model, outputs)
-        self.out4.weight.data.normal_(0, 0.1)
-
+        self.ad_model = ad_model
 
     def forward(self, x):
         if dqn_from_ad:
+            self.encoder.load_state_dict(self.ad_model.encoder.state_dict())
             x = self.encoder(x).detach()
         else:
             x = self.encoder(x)
+        
         '''x = F.relu(self.out1(x[-1, :]))
         x = F.relu(self.out2(x))
         x = F.relu(self.out3(x))
@@ -170,40 +164,26 @@ class DQN(nn.Module):
         return output
 
 class AD(nn.Module):
-    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.5):
+    def __init__(self, N_STATES, outputs, RL_model, d_model=32, num_layers=1, dropout=0.5):
         super(AD, self).__init__()
         self.encoder = TransAm(N_STATES, outputs, dropout=dropout)
-        #self.out = nn.Linear(d_model, N_STATES)
-        #self.out.weight.data.normal_(0, 0.1)
-        self.out1 = nn.Linear(d_model, 2 * d_model)
+        self.out1 = nn.Linear(d_model, d_model)
         self.out1.weight.data.normal_(0, 0.1)
-        self.out2 = nn.Linear(2 * d_model, 4 * d_model)
+        self.out2 = nn.Linear(d_model, d_model)
         self.out2.weight.data.normal_(0, 0.1)
-        self.out3 = nn.Linear(4 * d_model, 8 * d_model)
+        self.out3 = nn.Linear(d_model, N_STATES)
         self.out3.weight.data.normal_(0, 0.1)
-        self.out4 = nn.Linear(8 * d_model, 8 * d_model)
-        self.out4.weight.data.normal_(0, 0.1)
-        self.out5 = nn.Linear(8 * d_model, 4 * d_model)
-        self.out5.weight.data.normal_(0, 0.1)
-        self.out6 = nn.Linear(4 * d_model, 2 * d_model)
-        self.out6.weight.data.normal_(0, 0.1)
-        self.out7 = nn.Linear(2 * d_model, N_STATES)
-        self.out7.weight.data.normal_(0, 0.1)
-        
+        self.RL_model = RL_model
     
     def forward(self, x):
         if dqn_from_ad:
             x = self.encoder(x)
         else:
+            self.encoder.load_state_dict(self.RL_model.encoder.state_dict())
             x = self.encoder(x).detach()
-        #output = self.out(x)
         x = F.relu(self.out1(x))
         x = F.relu(self.out2(x))
-        x = F.relu(self.out3(x))
-        x = F.relu(self.out4(x))
-        x = F.relu(self.out5(x))
-        x = F.relu(self.out6(x))
-        output = self.out7(x)
+        output = self.out3(x)
         return output
 
 ############################################ Input extraction #################################
@@ -235,9 +215,16 @@ screen_height, screen_width = 1, 4
 
 # Get number of actions from gym action space
 n_actions = env.action_space.n
-anomaly_net = AD(4, n_actions).to(device)
-policy_net = DQN(4, n_actions, anomaly_net).to(device)
-target_net = DQN(4, n_actions, anomaly_net).to(device)
+
+if dqn_from_ad:
+    anomaly_net = AD(4, n_actions, []).to(device)
+    policy_net = DQN(4, n_actions, anomaly_net).to(device)
+    target_net = DQN(4, n_actions, anomaly_net).to(device)
+if dqn_from_ad == False:
+    policy_net = DQN(4, n_actions, []).to(device)
+    target_net = DQN(4, n_actions, []).to(device)
+    anomaly_net = AD(4, n_actions, target_net).to(device)
+
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
@@ -250,7 +237,7 @@ scheduler_ad = LambdaLR(optimizer_ad, lr_lambda=lambda t: 0.99**(t/100))
 
 optimizer_merge = optim.Adam([
     {'params': policy_net.parameters(), 'lr': 1e-3}, 
-    {'params': anomaly_net.parameters()}
+    {'params': anomaly_net.parameters(), 'lr': 1e-6}
     ])
 
 memory = ReplayMemory(10000)
@@ -336,17 +323,10 @@ def optimize_model():
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     pred = anomaly_net(state_batch[:, non_final_mask])
     loss_ad = criterion(pred, non_final_next_states)
-
     loss_merge = loss + loss_ad
     # Optimize the model
-    if i_episode <= 100:
-        optimizer.zero_grad()
-    optimizer_ad.zero_grad()
-    #optimizer_merge.zero_grad()
-    if i_episode <= 100:
-        loss.backward()
-    loss_ad.backward()
-    #loss_merge.backward()
+    optimizer_merge.zero_grad()
+    loss_merge.backward()
     if i_episode % 50 == 0 and ad_count == 0:
         print('AD loss: ', loss_ad.item(), 'lr ', optimizer_ad.param_groups[0]['lr'])
         ad_count = 1
@@ -357,16 +337,12 @@ def optimize_model():
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
             pass
-    '''for param in anomaly_net.parameters():
+    for param in anomaly_net.parameters():
         try:
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
-            pass'''
-    if i_episode <= 100:
-        optimizer.step()
-    optimizer_ad.step()
-    #scheduler_ad.step()
-    #optimizer_merge.step()
+            pass
+    optimizer_merge.step()
 num_episodes = 2000
 sequenceState = SequenceStates(max_length)
 for i_episode in range(num_episodes):
