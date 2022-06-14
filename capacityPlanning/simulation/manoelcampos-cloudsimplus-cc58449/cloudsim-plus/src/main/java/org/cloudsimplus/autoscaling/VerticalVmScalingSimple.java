@@ -72,11 +72,6 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             double cpuPercentage = getVm().getCpuPercentUtilization();
             int runningCloudlet = getVm().getCloudletScheduler().getCloudletExecList().size();
             if (lastTime != (int) getVm().getSimulation().clock()){
-            /*System.out.printf(
-                    "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). RAM usage: %.2f%% (%d MB)%n",
-                    getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
-                    getVm().getCloudletScheduler().getCloudletExecList().size(),
-                    getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource());*/
             System.out.printf(
                         "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                         getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
@@ -99,23 +94,6 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             else{
                 return false;
             }
-        
-        //按照pe个数占用的扩展方案
-        /*double AmountPes = getVm().getPeVerticalScaling().getResourceAmountToScale();
-        long cloudletRequestMinPes = 100;
-        for (CloudletExecution cloud : getVm().getCloudletScheduler().getCloudletExecList()) {
-            long pes = cloud.getNumberOfPes();
-            if (pes < cloudletRequestMinPes){
-                cloudletRequestMinPes = pes;
-            }
-        }
-        
-        if (getResource().getCapacity() -  AmountPes > 0){
-            return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
-        }
-        else{
-            return false;
-        }*/
         }else{
             return getVm().getRam().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
             //return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());

@@ -165,6 +165,7 @@ public class VerticalVmCpuScalingExample {
                 vm.getCloudletScheduler().getCloudletExecList().size(),
                 vm.getRam().getPercentUtilization()*100, vm.getRam().getAllocatedResource())
         );
+        
         //capacity: PEs of vm
         //allocatedResource: capacity - availableresource
         //resource.percentageUtil = getAllocatedResource() / (double)getCapacity()

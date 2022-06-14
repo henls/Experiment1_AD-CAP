@@ -136,7 +136,7 @@ public class VerticalVmCpuScalingExampleRevised {
     private static final int CLOUDLETS_LENGTH_LOWER = 2_000;
     private static final int CLOUDLETS_LENGTH_UPPER = 5_000;
 
-    private static final String workdir = System.getProperty("user.dir") + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
+    private static final String workdir = "/home/wangxinhua/Experiment1_AD-CAP" + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
 
     private static final String[] TRACE_FILE_CPU = {"workload/my-trace/4665896876_28_cpu_0.1038", 
                                                     "workload/my-trace/4665896876_43_cpu_0.1038",

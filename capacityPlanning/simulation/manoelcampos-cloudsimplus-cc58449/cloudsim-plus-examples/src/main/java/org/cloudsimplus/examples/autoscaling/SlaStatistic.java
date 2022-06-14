@@ -24,7 +24,7 @@ public class SlaStatistic {
     double VIOLATE_SAMPLE = 0.;//统计的时段内发生违反的次数
     int SAMPLE_RATE = 1;//采样率1s一次
     int lastTime;
-    private static final String workdir = System.getProperty("user.dir") + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
+    private static final String workdir = "/home/wangxinhua/Experiment1_AD-CAP" + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
 
     String pth = workdir + "output/sla.csv";
 
