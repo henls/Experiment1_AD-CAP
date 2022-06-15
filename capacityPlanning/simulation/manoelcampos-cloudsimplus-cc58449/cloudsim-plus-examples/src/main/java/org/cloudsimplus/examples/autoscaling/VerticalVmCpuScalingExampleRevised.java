@@ -50,6 +50,7 @@ import org.cloudbus.cloudsim.utilizationmodels.UtilizationModelPlanetLab;
 import org.cloudbus.cloudsim.vms.Vm;
 import org.cloudbus.cloudsim.vms.VmSimple;
 import org.cloudsimplus.autoscaling.HorizontalVmScaling;
+import org.cloudsimplus.autoscaling.SlaStatistic;
 import org.cloudsimplus.autoscaling.VerticalVmScaling;
 import org.cloudsimplus.autoscaling.VerticalVmScalingSimple;
 import org.cloudsimplus.autoscaling.resources.ResourceScaling;
@@ -75,7 +76,6 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 
 import org.cloudsimplus.examples.autoscaling.AnomalyModel;
-import org.cloudsimplus.examples.autoscaling.SlaStatistic;
 
 /**
  * An example that scales VM PEs up or down, according to the arrival of Cloudlets.

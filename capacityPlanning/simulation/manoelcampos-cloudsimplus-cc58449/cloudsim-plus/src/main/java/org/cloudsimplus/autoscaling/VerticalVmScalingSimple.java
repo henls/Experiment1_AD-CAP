@@ -32,6 +32,11 @@ import org.cloudsimplus.autoscaling.resources.ResourceScaling;
 import org.cloudsimplus.autoscaling.resources.ResourceScalingGradual;
 import org.cloudbus.cloudsim.resources.Ram;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+
+import org.cloudsimplus.autoscaling.exchange;
 /**
  * A {@link VerticalVmScaling} implementation which allows a {@link DatacenterBroker}
  * to perform on demand up or down scaling for some {@link Vm} resource, such as {@link Ram},
@@ -62,11 +67,13 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     double lastMipsUsage = 1.;
     double lastPeUsage= 1.;
     int lastTime = 0;
+    String action = new String();
     public VerticalVmScalingSimple(final Class<? extends ResourceManageable> resourceClassToScale, final double scalingFactor){
         super(resourceClassToScale, new ResourceScalingGradual(), scalingFactor);
     }
+    exchange ExApi = new exchange();
 
-    @Override
+    /*@Override
     public boolean isVmUnderloaded() {
         if (getResourceClass().getSimpleName().equals("Processor")){
             double cpuPercentage = getVm().getCpuPercentUtilization();
@@ -99,9 +106,23 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             //return getResource().getPercentUtilization() < getLowerThresholdFunction().apply(getVm());
             
         }
+    }*/
+    @Override
+    public boolean isVmUnderloaded(){
+        
+        ExApi.writeStatus(getVm());
+        this.action = ExApi.readAction();
+        switch(this.action){
+            case "1":
+            case "0":
+                return false;
+            case "-1":
+                return true;
+        }
+        return false;
     }
 
-    @Override
+    /*@Override
     public boolean isVmOverloaded() {
         if (getResourceClass().getSimpleName().equals("Processor")){
             double cpuPercentage = getVm().getCpuPercentUtilization();
@@ -118,6 +139,17 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             //return getResource().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
             return getVm().getRam().getPercentUtilization() > getUpperThresholdFunction().apply(getVm());
         }
+    }*/
+    @Override
+    public boolean isVmOverloaded() {
+        switch(this.action){
+            case "-1":
+            case "0":
+                return false;
+            case "1":
+                return true;
+        }
+        return false;
     }
 
     public double getPePercentage() {

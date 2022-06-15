@@ -1,4 +1,4 @@
-package org.cloudsimplus.examples.autoscaling;
+package org.cloudsimplus.autoscaling;
 
 import org.apache.commons.collections4.ListUtils;
 import org.cloudbus.cloudsim.cloudlets.CloudletExecution;
@@ -64,6 +64,37 @@ public class SlaStatistic {
             //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
             writeSla(pth, "" + VIOLATE_SAMPLE / TOTAL_SAMPLE + "\n");
         }
+    }
+    //单个虚拟机上的违反率计算，vmList传入的长度为1
+    public String getViloate(Vm vms, boolean reward){
+        int nowTime = (int) vms.getSimulation().clock();
+        if (nowTime % SAMPLE_RATE == 0 && nowTime != lastTime){
+            lastTime = nowTime;
+            for (Vm vm : vmList) {
+                List<CloudletExecution> completeList = vm.getCloudletScheduler().getCloudletFinishedList();
+                List<CloudletExecution> newComplete = ListUtils.subtract(completeList,completeLast);
+                List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>(completeList);
+                this.completeLast = completeLast;
+                int vmUtil = (int) vm.getCpuPercentUtilization() * 100;
+                for (CloudletExecution newCloudlet : newComplete) {
+                    TOTAL_SAMPLE += 1.;
+                    double execTime = newCloudlet.getFinishTime() - newCloudlet.getCloudletArrivalTime();
+                    if (execTime < RT_MIN || execTime > RT_MAX || vmUtil < UTILIZATION_MIN || vmUtil > UTILIZATION_MAX){
+                        /*System.out.println("execTime " + execTime);
+                        System.out.printf("execTime < RT_MIN %b || execTime > RT_MAX %b || vmUtil < UTILIZATION_MIN %b || vmUtil > UTILIZATION_MAX %b%n",
+                                            execTime < RT_MIN, 
+                                            execTime > RT_MAX, 
+                                            vmUtil < UTILIZATION_MIN, 
+                                            vmUtil > UTILIZATION_MAX
+                                            );*/
+                        VIOLATE_SAMPLE += 1.;
+                    }
+                }
+            }
+            //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
+            return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";
+        }
+        return "";
     }
 
     public void writeSla(String pth, String cont){
