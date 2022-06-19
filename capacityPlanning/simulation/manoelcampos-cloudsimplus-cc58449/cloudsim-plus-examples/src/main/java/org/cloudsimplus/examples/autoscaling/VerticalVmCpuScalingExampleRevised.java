@@ -357,7 +357,7 @@ public class VerticalVmCpuScalingExampleRevised {
      */
     private VerticalVmScaling createVerticalPeScaling() {
         //The percentage in which the number of PEs has to be scaled
-        final double scalingFactor = 0.1;
+        final double scalingFactor = 0.;
         VerticalVmScalingSimple verticalCpuScaling = new VerticalVmScalingSimple(Processor.class, scalingFactor);
 
         /* By uncommenting the line below, you will see that, instead of gradually

@@ -50,6 +50,8 @@ public abstract class VmAllocationPolicyAbstract implements VmAllocationPolicy {
     /** @see #getDatacenter() */
     private Datacenter datacenter;
 
+    private int lastClock = 1;
+
     /**@see #getHostCountForParallelSearch() */
     private int hostCountForParallelSearch;
 
@@ -149,8 +151,10 @@ public abstract class VmAllocationPolicyAbstract implements VmAllocationPolicy {
         vm.getHost().getVmScheduler().deallocatePesFromVm(vm);
         final int signal = scaling.isVmUnderloaded() ? -1 : 1;
         //Removes or adds some capacity from/to the resource, respectively if the VM is under or overloaded
-        vm.getProcessor().sumCapacity((long) pesNumberForScaling * signal);
-
+        if ((int) vm.getSimulation().clock() != lastClock){
+            lastClock = (int) vm.getSimulation().clock();
+            vm.getProcessor().sumCapacity((long) pesNumberForScaling * signal);
+        }
         vm.getHost().getVmScheduler().allocatePesForVm(vm);
         return true;
     }

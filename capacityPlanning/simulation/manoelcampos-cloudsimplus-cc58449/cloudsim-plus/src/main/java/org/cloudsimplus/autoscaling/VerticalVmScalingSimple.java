@@ -109,17 +109,32 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     }*/
     @Override
     public boolean isVmUnderloaded(){
-        
-        ExApi.writeStatus(getVm());
-        this.action = ExApi.readAction();
-        switch(this.action){
-            case "1":
-            case "0":
-                return false;
-            case "-1":
-                return true;
+        if (lastTime != (int) getVm().getSimulation().clock()){
+            System.out.printf(
+                            "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
+                            getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
+                            getVm().getCloudletScheduler().getCloudletExecList().size(),
+                            getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource(), getVm().getRam().getCapacity(),
+                            getVm().getHost().getRam().getPercentUtilization() * 100,
+                            getVm().getHost().getRam().getAllocatedResource(),
+                            getVm().getHost().getRam().getCapacity());
+            ExApi.writeStatus(getVm());
+            this.action = ExApi.readAction();
+            lastTime = (int) getVm().getSimulation().clock();
         }
-        return false;
+        
+        boolean is = false;
+        
+        if (this.action.contains("-1")) {
+            is = true;
+        }
+        double AmountPes = getVm().getPeVerticalScaling().getResourceAmountToScale();
+        if (getResource().getCapacity() -  AmountPes > 0){
+            return is;
+        }
+        else{
+            return false;
+        }
     }
 
     /*@Override
@@ -142,14 +157,11 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     }*/
     @Override
     public boolean isVmOverloaded() {
-        switch(this.action){
-            case "-1":
-            case "0":
-                return false;
-            case "1":
-                return true;
+        boolean is = false;
+        if (this.action.contains("1")){
+            is = true;
         }
-        return false;
+        return is;
     }
 
     public double getPePercentage() {
