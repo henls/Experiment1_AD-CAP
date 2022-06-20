@@ -1,4 +1,3 @@
-#使用图片作为状态空间
 from cProfile import label
 import itertools
 from sys import prefix

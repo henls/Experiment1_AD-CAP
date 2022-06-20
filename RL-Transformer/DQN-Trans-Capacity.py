@@ -1,5 +1,9 @@
-#使用图片作为状态空间
-from cartpole.env import Cartpole
+from cProfile import label
+import itertools
+from sys import prefix
+import time
+from turtle import forward
+import gym
 import math
 import random
 import matplotlib
@@ -8,28 +12,30 @@ from collections import namedtuple, deque
 from itertools import count
 from PIL import Image
 import os
+import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+from torch.optim.lr_scheduler import LambdaLR
+
+import json
 
 from line_profiler import LineProfiler
 ############################################ init #################################
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ['CUDA_VISIBLE_DEVICES'] = "1"
-env = gym.make('CartPole-v0').unwrapped
-env.seed(1000)
 torch.manual_seed(200)
 random.seed(60)
-max_length = 10
+max_length = 13
+dqn_from_ad = False
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-plt.ion()
 
 # if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -37,6 +43,60 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
+class envCapacity(object):
+
+    def __init__(self, n_action, n_status, config):
+        self.n_action  = n_action
+        self.n_status = n_status
+        self.config = config
+        self.loadconfig()
+
+
+    def loadconfig(self):
+        with open(self.config, 'r') as fd:
+            content = json.load(fd)
+        self.action_path = content['action']
+        self.status_path = content['status']
+        self.max_length = content['maxlength']
+    
+    def actionSpace(self):
+        return self.n_action
+    
+    def statusSpace(self):
+        return self.n_status
+
+    def reset(self):
+        ini = [0.]*self.max_length
+        return np.array(ini, dtype=np.float32).reshape(self.max_length, -1)
+    
+    def step(self, action):
+        #返回长度为14，维度为1的序列。cartpole任务返回长度10，维度4的序列
+        fd = 'null'
+        action -= 1
+        while 'null' in fd:
+            assert action in [-1, 0, 1]
+            fd = ''
+            while 'OK' not in fd:
+                with open(self.action_path, 'r') as f:
+                    fd = f.read() 
+                time.sleep(0.1)
+            with open(self.action_path, 'w') as f:
+                f.write(str(action)) 
+            fd = 'OK'
+            while 'OK' in fd:
+                with open(self.status_path, 'r') as f:
+                    fd = f.read()
+            with open(self.status_path, 'w') as f:
+                f.write(fd + 'OK')
+        p, reward, done = fd.split('&')[0], float(fd.split('&')[1]), float(fd.split('&')[2])
+        cpu, RT, usedPEs, totalpes = p.split('$')
+        cpu = [float(i) for i in cpu[1:-1].split(',')]
+        RT = float(RT)
+        usedPEs = float(usedPEs)
+        totalpes = float(totalpes)
+        return np.array(cpu + [RT, usedPEs, totalpes]).reshape(self.max_length, -1), -1 * reward, done
+
+env = envCapacity(3, 1, 'config/configure')
 
 class ReplayMemory(object):
 
@@ -60,6 +120,7 @@ class SequenceStates(object):
         *输入：： max_length:状态序列的长度
         *输出：： 当前管道中的状态
         """
+        #capacity任务中不需要这个也可以，因为每次追加的长度就是管道长度，相当于替换了
         self.max_length = max_length
         self.stats_que = deque([], maxlen= max_length)
 
@@ -99,43 +160,23 @@ class TransAm(nn.Module):
         self.pos_encoder = PositionalEncoding(d_model)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model, nhead=1, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        #self.decoder = nn.Linear(feature_size, 2)
-        #self.init_weights()
-        self.fc1 = nn.Linear(N_STATES,16) # 4->16
-        self.fc1.weight.data.normal_(0, 0.1)
-        self.bn1 = nn.BatchNorm1d(16)
-        self.fc2 = nn.Linear(16, d_model) # 16 -> 32
-        self.fc2.weight.data.normal_(0, 0.1)
-        self.bn2 = nn.BatchNorm1d(d_model)
-        self.fc3 = nn.Linear(d_model, d_model) # 32 -> 32
-        self.fc3.weight.data.normal_(0, 0.1)
-        self.bn3 = nn.BatchNorm1d(d_model)
-        self.out1 = nn.Linear(d_model, outputs)
-        self.out1.weight.data.normal_(0, 0.1)
-
-
-    '''def init_weights(self):
-        initrange = 0.1
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)'''
+        self.fc = nn.Sequential(
+                    nn.Linear(N_STATES,16), 
+                    nn.ReLU(),
+                    nn.Linear(16, d_model),
+                    nn.ReLU(),
+                    nn.Linear(d_model, d_model),
+                    nn.ReLU(),
+                )
 
     def forward(self, src):
         if self.src_mask is None or self.src_mask.size(0) != len(src):
             mask = self._generate_square_subsequent_mask(max_length).to(device)
             self.src_mask = mask
-        if 0 > 1:
-            src = F.relu(self.bn1(self.fc1(src)))
-            src = F.relu(self.bn2(self.fc2(src)))
-            src = F.relu(self.bn3(self.fc3(src)))
-        else:
-            src = F.relu(self.fc1(src))
-            src = F.relu(self.fc2(src))
-            src = F.relu(self.fc3(src))
+        src = src.to(torch.float32)
+        src = self.fc(src)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
-        #10x128x32
-        #output = self.out1(output[-1, :, :])#验证cartpole问题
-        #output = self.decoder(output)
         return output
 
     def _generate_square_subsequent_mask(self, sz):
@@ -143,53 +184,48 @@ class TransAm(nn.Module):
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-class DQN(nn.Module):
-    def __init__(self, N_STATES, outputs, ad_model, d_model=32, num_layers=1, dropout=0.):
-        super(DQN, self).__init__()
+class Net(nn.Module):
+    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
+        super(Net, self).__init__()
         self.encoder = TransAm(N_STATES, outputs)
-        self.encoder.load_state_dict(ad_model.encoder.state_dict())
-        self.out1 = nn.Linear(d_model, 2*d_model)
-        self.out1.weight.data.normal_(0, 0.1)
-        self.out2 = nn.Linear(2 * d_model, 2 * d_model)
-        self.out2.weight.data.normal_(0, 0.1)
-        self.out3 = nn.Linear(2 * d_model, d_model)
-        self.out3.weight.data.normal_(0, 0.1)
-        self.out4 = nn.Linear(d_model, outputs)
-        self.out4.weight.data.normal_(0, 0.1)
-
-
-    def forward(self, x):
-        x = self.encoder(x).detach()
-        x = F.relu(self.out1(x[-1, :]))
-        x = F.relu(self.out2(x))
-        x = F.relu(self.out3(x))
-        output = self.out4(x)
-        return output
-
-class AD(nn.Module):
-    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.5):
-        super(AD, self).__init__()
-        self.encoder = TransAm(N_STATES, outputs, dropout=dropout)
-        self.out = nn.Linear(d_model, N_STATES)
-        self.out.weight.data.normal_(0, 0.1)
-    
+        self.d_model = d_model
+        self.DqnOut = nn.Sequential(
+                        nn.Linear(d_model * 2, outputs)
+                        )
+        self.DqnOut_usage = nn.Sequential(
+                        nn.Linear(d_model * 10, d_model),
+                        nn.ReLU()
+                        )
+        self.DqnOut_others = nn.Sequential(
+                        nn.Linear(d_model * 3, d_model),
+                        nn.ReLU()
+                        )
+        self.AdOut = nn.Sequential(
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, N_STATES)
+                        )
     def forward(self, x):
         x = self.encoder(x)
-        output = self.out(x)
-        return output
+        adout = self.AdOut(x)[:10, :]
+        #length x batch x feature
+        x_usage = x[:10].reshape(-1, 10 * self.d_model) # batch x d_model
+        x_others = x[10:].reshape(-1, 3 * self.d_model)
+        x_usage = self.DqnOut_usage(x_usage)
+        x_others = self.DqnOut_others(x_others)
+        x = torch.cat([x_usage, x_others]).reshape(x.shape[1], -1)
+        rlout = self.DqnOut(x)
+        #batch x d_model
+        return {'rl':rlout, 'ad':adout}
 
 ############################################ Input extraction #################################
-
-resize = T.Compose([T.ToPILImage(),
-                    T.Resize(40, interpolation=Image.CUBIC),
-                    T.ToTensor()])
-
 
 def get_cart_location(screen_width):
     world_width = env.x_threshold * 2
     scale = screen_width / world_width
     return int(env.state[0] * scale + screen_width / 2.0)  # MIDDLE OF CART
-
 
 ############################################ Training #################################
 BATCH_SIZE = 64
@@ -206,19 +242,18 @@ TARGET_UPDATE = 10
 screen_height, screen_width = 1, 4
 
 # Get number of actions from gym action space
-n_actions = env.action_space.n
-anomaly_net = AD(4, n_actions).to(device)
-policy_net = DQN(4, n_actions, anomaly_net).to(device)
-target_net = DQN(4, n_actions, anomaly_net).to(device)
+n_actions = env.actionSpace()
+n_status = env.statusSpace()
+policy_net = Net(n_status, n_actions).to(device)
+target_net = Net(n_status, n_actions).to(device)
+
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters())
 optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
+
 memory = ReplayMemory(10000)
-optimizer_ad = optim.Adam(anomaly_net.parameters(), lr = 1e-3)
-
-
 steps_done = 0
 
 explore = 0
@@ -235,96 +270,89 @@ def select_action(state):
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
-            return policy_net(state).max(1)[1].view(1, 1)
+            return policy_net(state)['rl'].max(1)[1].view(1, 1)
     else:
         explore += 1
         return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
 
-episode_durations = []
+def valid_plot(true, pred, episode):
+    x_true = true[-1, :].to("cpu").detach().numpy() 
+    x_pred = pred[-1, :].to("cpu").detach().numpy() 
+    plt.plot(x_true, color="red", label='true')
+    plt.plot(x_pred, color="blue", label='pred')
+    plt.grid(True, which='both')
+    plt.axhline(y=0, color='k')
+    plt.legend()
+    plt.savefig('graph/transformer-episode{}.png'.format(episode))
+    plt.close()
 
 ############################################ Training loop #################################
-
+ad_count = 0
 def optimize_model():
+    global i_episode, ad_count
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
-    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-    # detailed explanation). This converts batch-array of Transitions
-    # to Transition of batch-arrays.
-    
+
     batch = Transition(*zip(*transitions))
 
-    # Compute a mask of non-final states and concatenate the batch elements
-    # (a final state would've been the one after which simulation ended)
     non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                           batch.next_state)), device=device, dtype=torch.bool)
 
     non_final_next_states = torch.cat([s for s in batch.next_state
-                                                if s is not None], dim=1)
+                                                if s is not None], dim=1).to(torch.float32)
     state_batch = torch.cat(batch.state, dim=1)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
 
-    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-    # columns of actions taken. These are the actions which would've been taken
-    # for each batch state according to policy_net
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
+    state_action_values = policy_net(state_batch)['rl'].gather(1, action_batch)
 
-    # Compute V(s_{t+1}) for all next states.
-    # Expected values of actions for non_final_next_states are computed based
-    # on the "older" target_net; selecting their best reward with max(1)[0].
-    # This is merged based on the mask, such that we'll have either the expected
-    # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0].detach()
-    # Compute the expected Q values
+    next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
+
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
     #criterion = nn.SmoothL1Loss()
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-    loss_ad = criterion(anomaly_net(state_batch[:, non_final_mask]), non_final_next_states)
+    pred = policy_net(state_batch[:, non_final_mask])['ad']
+    loss_ad = criterion(pred, non_final_next_states[:10, :])
+    loss_merge = loss + loss_ad
     # Optimize the model
     optimizer.zero_grad()
-    optimizer_ad.zero_grad()
-    loss.backward()
-    loss_ad.backward()
+    loss_merge.backward()
+    if i_episode % 50 == 0 and ad_count == 0:
+        print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
+        ad_count = 1
+        #验证网络预测能力
+        valid_plot(non_final_next_states[:10, :], pred, i_episode)
     for param in policy_net.parameters():
         try:
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
             pass
-    for param in anomaly_net.parameters():
-        try:
-            param.grad.data.clamp_(-1, 1)
-        except Exception as e:
-            pass
     optimizer.step()
-    optimizer_ad.step()
-num_episodes = 1000
+num_episodes = 2000
 sequenceState = SequenceStates(max_length)
+
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
     state = env.reset()
-    state = torch.from_numpy(state).to(device)
-    for i in range(max_length):
-        sequenceState.push(state)
-    state = sequenceState.get()
-    #matplotlib.image.imsave('./state.jpg', np.array(state[0, 0,:,:]))
+    #14 x 1.长度14，维度1
+    state = torch.from_numpy(state).reshape(max_length, -1, n_status).to(device)
     for t in count():
         # Select and perform an action
         action = select_action(state)
-        s, reward, done, _ = env.step(action.item())
+        s, reward, done = env.step(action.item())
         reward = torch.tensor([reward], device=device)
         with torch.no_grad():
             reward_total += reward.cpu().item()
         # Observe new state
-        s = torch.from_numpy(s).to(device)
+        s = torch.from_numpy(s).reshape(max_length, -1, n_status).to(device)
         if not done:
-            sequenceState.push(s)
-            next_state = sequenceState.get()
+            next_state = s
         else:
             next_state = None
 
@@ -333,22 +361,17 @@ for i_episode in range(num_episodes):
 
         # Move to the next state
         state = next_state
-
         # Perform one step of the optimization (on the policy network)
         optimize_model()
         if done:
-            episode_durations.append(t + 1)
-            #plot_durations()
             break
-    if i_episode % 50 == 0:
+    if i_episode % 1 == 0:
+        ad_count = 0
         print("Episode {} | Total reward is {} ".format(i_episode ,reward_total))
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 
-
 print('Complete')
 env.render()
 env.close()
-plt.ioff()
-plt.show()
