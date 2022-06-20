@@ -189,7 +189,11 @@ public class VerticalVmCpuScalingExampleRevised {
     SlaStatistic sla;
 
     public static void main(String[] args) {
-        new VerticalVmCpuScalingExampleRevised();
+        int episode = 1000;
+        while (episode > 0){
+            new VerticalVmCpuScalingExampleRevised();
+            episode--;
+        }
     }
 
     /**

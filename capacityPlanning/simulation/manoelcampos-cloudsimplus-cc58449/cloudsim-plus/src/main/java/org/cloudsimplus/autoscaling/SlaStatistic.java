@@ -18,8 +18,8 @@ public class SlaStatistic {
     */
     int RT_MAX = 300; //RT:response time and unit is senond
     int RT_MIN = 200;
-    int UTILIZATION_MAX = 90;
-    int UTILIZATION_MIN = 0;
+    int UTILIZATION_MAX = 80;
+    int UTILIZATION_MIN = 40;
     double TOTAL_SAMPLE = 0. + 1e-8;//总的采样数
     double VIOLATE_SAMPLE = 0.;//统计的时段内发生违反的次数
     int SAMPLE_RATE = 1;//采样率1s一次
