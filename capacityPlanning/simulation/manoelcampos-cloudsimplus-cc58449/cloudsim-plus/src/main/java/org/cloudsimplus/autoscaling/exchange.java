@@ -34,6 +34,7 @@ public class exchange {
     LimitQueue<Double> queue = new LimitQueue<Double>(limit);
     List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>();
     double RT = 0;
+    long totalPEs;
     public exchange(){
     File configFile = new File(configPath);
         if (configFile.exists() == false){
@@ -65,8 +66,9 @@ public class exchange {
             return "";
         }
     }
-    public void writeStatus(Vm vm){
+    public long writeStatus(Vm vm, String require_reward){
         //所有虚拟机增减完成后才发送reward，因为要做水平伸缩的实验。暂时只考虑静态虚拟机个数。
+        //暂时只考虑垂直伸缩。
         List<Vm> vmList = new ArrayList<>();
         vmList.add(vm);
         SlaStatistic sla = new SlaStatistic(vmList);
@@ -76,23 +78,39 @@ public class exchange {
         if (statusSpace == "null"){
             reward = "null";
         }else{
-            reward = sla.getViloate(vm, true);
+            //如果占用了全部资源就停止，并给出-100的奖励
+            if (totalPEs == 32){
+                reward = "-100";
+            }else{
+                reward = sla.getViloate(vm, true);
+            }
         }
         String done = new String();
-        if (vm.getCloudletScheduler().getCloudletExecList().size() == 0){
+        if (vm.getCloudletScheduler().getCloudletExecList().size() <= 1){
             done = "1";
         }else{
             done = "0";
+        }
+        if (require_reward.equals("-101")){
+            reward = require_reward;
+        }
+        //如果占用了全部资源就停止，并给出-100的奖励
+        if (reward.equals("-100")){
+            done = "1";
         }
         try {
             while (content.contains("OK") == false){
                 content = lockRead(this.status);
             }
             lockWrite(this.status, statusSpace + "&" + reward + "&" + done);
+            if (done.equals("1")){
+                vm.getSimulation().abort();
+            }
         } catch (Exception e) {
             System.out.println(e);
             System.out.println("INFO# something error when write file.");
         }
+        return totalPEs;
     }
     public String getStatus(Vm vm){
         double cpuPercentage = vm.getCpuPercentUtilization();
@@ -118,7 +136,7 @@ public class exchange {
             this.RT = tmp / newComplete.size();
         }
         
-        long totalPEs = vm.getNumberOfPes();
+        totalPEs = vm.getNumberOfPes();
         long availablePEs = vm.getFreePesNumber();
         long usedPEs = totalPEs - availablePEs;
         if (queue.size() == limit){
@@ -221,6 +239,5 @@ public class exchange {
     } catch (Exception e) {
         return "";
     }
-		
     }
 }   

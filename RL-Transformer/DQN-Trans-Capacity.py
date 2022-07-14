@@ -37,7 +37,6 @@ if is_ipython:
     from IPython import display
 
 
-# if gpu is to be used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ############################################ replay memory #################################
 Transition = namedtuple('Transition',
@@ -94,7 +93,7 @@ class envCapacity(object):
         RT = float(RT)
         usedPEs = float(usedPEs)
         totalpes = float(totalpes)
-        return np.array(cpu + [RT, usedPEs, totalpes]).reshape(self.max_length, -1), -1 * reward, done
+        return np.array(cpu + [RT, usedPEs, totalpes]).reshape(self.max_length, -1), reward, done
 
 env = envCapacity(3, 1, 'config/configure')
 
@@ -176,7 +175,7 @@ class TransAm(nn.Module):
         src = src.to(torch.float32)
         src = self.fc(src)
         src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, self.src_mask)
+        output = self.transformer_encoder(src, self.src_mask)#特征提取网络
         return output
 
     def _generate_square_subsequent_mask(self, sz):
@@ -208,14 +207,14 @@ class Net(nn.Module):
                         nn.Linear(d_model, N_STATES)
                         )
     def forward(self, x):
-        x = self.encoder(x)
-        adout = self.AdOut(x)[:10, :]
+        x = self.encoder(x)#得到提取的状态
+        adout = self.AdOut(x)[:10, :]#时间窗口内的数据（利用率数据）
         #length x batch x feature
         x_usage = x[:10].reshape(-1, 10 * self.d_model) # batch x d_model
         x_others = x[10:].reshape(-1, 3 * self.d_model)
         x_usage = self.DqnOut_usage(x_usage)
-        x_others = self.DqnOut_others(x_others)
-        x = torch.cat([x_usage, x_others]).reshape(x.shape[1], -1)
+        x_others = self.DqnOut_others(x_others) # 响应时间、当前虚拟机已用资源、当前虚拟机总容量
+        x = torch.cat([x_usage, x_others]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
         rlout = self.DqnOut(x)
         #batch x d_model
         return {'rl':rlout, 'ad':adout}
@@ -340,7 +339,7 @@ for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
     state = env.reset()
-    #14 x 1.长度14，维度1
+    #13 x 1.长度13，维度1
     state = torch.from_numpy(state).reshape(max_length, -1, n_status).to(device)
     for t in count():
         # Select and perform an action

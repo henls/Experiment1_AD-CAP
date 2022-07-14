@@ -172,7 +172,6 @@ public class VerticalVmCpuScalingExampleRevised {
                                                       };
 
     Random getRand = new Random(400);
-    
     boolean anomaly = true;
 
     private static final String sampleTracePth = workdir + "resources/workload/sample/sample.csv";
@@ -180,19 +179,24 @@ public class VerticalVmCpuScalingExampleRevised {
     int lastTime = 0;
 
     private int createsVms;
-
+    private 
     ArrayList<Double> recordCpu = new ArrayList<Double>();
     ArrayList<Double> recordRam = new ArrayList<Double>();
     
     AnomalyModel createAnomaly =  new AnomalyModel(TRACE_ANOMALY_CPU, TRACE_ANOMALY_MEM, getRand, SCHEDULING_INTERVAL, VM_PES);
     
-    SlaStatistic sla;
-
+    SlaStatistic sla;    
     public static void main(String[] args) {
         int episode = 1000;
         while (episode > 0){
             new VerticalVmCpuScalingExampleRevised();
             episode--;
+            System.out.printf("episode %d \n", 1000-episode);
+            try {
+                Thread.sleep(100);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -247,7 +251,6 @@ public class VerticalVmCpuScalingExampleRevised {
         //统计sla违反率
         
         sla.getViloate(evt);
-
         int nowTime = (int) evt.getTime();
         recordCpu.add(vmList.get(0).getCpuPercentUtilization());
         recordRam.add(vmList.get(0).getRam().getPercentUtilization());

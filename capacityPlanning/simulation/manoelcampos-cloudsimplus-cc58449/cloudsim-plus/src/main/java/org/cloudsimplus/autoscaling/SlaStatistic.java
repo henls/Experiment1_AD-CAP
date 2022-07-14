@@ -65,11 +65,14 @@ public class SlaStatistic {
             writeSla(pth, "" + VIOLATE_SAMPLE / TOTAL_SAMPLE + "\n");
         }
     }
-    //单个虚拟机上的违反率计算，vmList传入的长度为1
+    //单个虚拟机上的违反率计算，vmList传入的长度为1 用于与RL模型联动。
     public String getViloate(Vm vms, boolean reward){
         int nowTime = (int) vms.getSimulation().clock();
         if (nowTime % SAMPLE_RATE == 0 && nowTime != lastTime){
+            double rt_reward = 0.;
+            double ut_reward = 1.;
             lastTime = nowTime;
+            int tmp = 0;
             for (Vm vm : vmList) {
                 List<CloudletExecution> completeList = vm.getCloudletScheduler().getCloudletFinishedList();
                 List<CloudletExecution> newComplete = ListUtils.subtract(completeList,completeLast);
@@ -89,10 +92,31 @@ public class SlaStatistic {
                                             );*/
                         VIOLATE_SAMPLE += 1.;
                     }
+                    tmp += execTime;
+                }
+                //计算当前间隔的平均响应时间
+                int rt = 0;
+                if (newComplete.size() != 0){
+                    rt = tmp / newComplete.size();
+                }
+                //响应时间的奖励函数
+                rt_reward = 1.;
+                if (rt > RT_MAX){
+                    rt_reward = Math.pow(Math.E, -1 * (Math.pow((rt - RT_MAX)/RT_MAX, 2)));
+                }
+                if (rt < RT_MIN){
+                    rt_reward = Math.pow(Math.E, -1 * (Math.pow((RT_MIN - rt)/RT_MIN, 2)));
+                }
+                //虚拟机利用率的奖励函数，正常多个虚拟机多个资源都要做。现在只考虑在单个虚拟机的CPU上做垂直扩展的。
+                ut_reward = vmUtil / 100. - UTILIZATION_MAX / 100. + 1.;
+                if (vmUtil <=  UTILIZATION_MAX){
+                    ut_reward = UTILIZATION_MAX / 100. - vmUtil / 100. + 1;
                 }
             }
             //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
-            return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";
+            //return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";//保留，在呈现实验结果时sla违反率更直观
+            return rt_reward / ut_reward + "";
+
         }
         return "";
     }

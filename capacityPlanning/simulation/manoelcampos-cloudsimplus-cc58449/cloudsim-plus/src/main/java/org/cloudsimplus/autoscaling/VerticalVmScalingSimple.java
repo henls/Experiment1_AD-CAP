@@ -68,6 +68,7 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     double lastPeUsage= 1.;
     int lastTime = 0;
     String action = new String();
+    String reward = "0";
     public VerticalVmScalingSimple(final Class<? extends ResourceManageable> resourceClassToScale, final double scalingFactor){
         super(resourceClassToScale, new ResourceScalingGradual(), scalingFactor);
     }
@@ -110,16 +111,23 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     @Override
     public boolean isVmUnderloaded(){
         if (lastTime != (int) getVm().getSimulation().clock()){
-            System.out.printf(
+           /* System.out.printf(
                             "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                             getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
                             getVm().getCloudletScheduler().getCloudletExecList().size(),
                             getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource(), getVm().getRam().getCapacity(),
                             getVm().getHost().getRam().getPercentUtilization() * 100,
                             getVm().getHost().getRam().getAllocatedResource(),
-                            getVm().getHost().getRam().getCapacity());
-            ExApi.writeStatus(getVm());
+                            getVm().getHost().getRam().getCapacity());*/ 
+            
+            long totalPEs = ExApi.writeStatus(getVm(), reward);
             this.action = ExApi.readAction();
+            //如果只剩一个核还在继续减就给出-101的奖励，但不停止
+            if (totalPEs == 1 && this.action.contains("-1")){
+                reward = "-101";
+            }else{
+                reward = "0";
+            }
             lastTime = (int) getVm().getSimulation().clock();
         }
         
