@@ -151,7 +151,7 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:x.size(0), :]
 
 class TransAm(nn.Module):
-    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
+    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.5):
         super(TransAm, self).__init__()
         global max_length
         self.model_type = 'Transformer'
@@ -160,7 +160,7 @@ class TransAm(nn.Module):
         self.encoder_layer = nn.TransformerEncoderLayer(d_model, nhead=1, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
         self.fc = nn.Sequential(
-                    nn.Linear(N_STATES,16), 
+                    nn.Linear(N_STATES,16),
                     nn.ReLU(),
                     nn.Linear(16, d_model),
                     nn.ReLU(),
@@ -170,7 +170,7 @@ class TransAm(nn.Module):
 
     def forward(self, src):
         if self.src_mask is None or self.src_mask.size(0) != len(src):
-            mask = self._generate_square_subsequent_mask(max_length).to(device)
+            mask = self._generate_square_subsequent_mask(max_length - 3).to(device)
             self.src_mask = mask
         src = src.to(torch.float32)
         src = self.fc(src)
@@ -193,11 +193,17 @@ class Net(nn.Module):
                         )
         self.DqnOut_usage = nn.Sequential(
                         nn.Linear(d_model * 10, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, d_model),
                         nn.ReLU()
                         )
-        self.DqnOut_others = nn.Sequential(
-                        nn.Linear(d_model * 3, d_model),
-                        nn.ReLU()
+        self.DqnOut_metric = nn.Sequential(
+                        nn.Linear(2, d_model),
+                        #nn.ReLU(),
+                        nn.Tanh(),
+                        nn.Linear(d_model, d_model),
+                        #nn.ReLU()
+                        nn.Tanh()
                         )
         self.AdOut = nn.Sequential(
                         nn.Linear(d_model, d_model),
@@ -207,14 +213,18 @@ class Net(nn.Module):
                         nn.Linear(d_model, N_STATES)
                         )
     def forward(self, x):
-        x = self.encoder(x)#得到提取的状态
-        adout = self.AdOut(x)[:10, :]#时间窗口内的数据（利用率数据）
-        #length x batch x feature
-        x_usage = x[:10].reshape(-1, 10 * self.d_model) # batch x d_model
-        x_others = x[10:].reshape(-1, 3 * self.d_model)
-        x_usage = self.DqnOut_usage(x_usage)
-        x_others = self.DqnOut_others(x_others) # 响应时间、当前虚拟机已用资源、当前虚拟机总容量
-        x = torch.cat([x_usage, x_others]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
+        #transformer应该只对序列编码，RT等特征需要单独提取
+        #x:sequence x batchsize x dim
+        x = x.float()
+        x_usage = self.encoder(x[:10])#得到序列特征
+        adout = self.AdOut(x_usage)#时间窗口内的数据（利用率数据）
+        x_usage_rl = x_usage.reshape(-1, 10 * self.d_model) # batch x d_model
+        #交换x[10:]数据的1、2维，不把数据看成序列，因为不再是序列变成batchsize x feature
+        #x_metric = self.DqnOut_metric(x[10:].transpose(1,0).reshape(-1, 3))
+        x_metric = self.DqnOut_metric(x[11:].transpose(1,0).reshape(-1, 2))#先把响应时间去掉
+        # 响应时间、当前虚拟机已用资源、当前虚拟机总容量
+        x_usage_rl = self.DqnOut_usage(x_usage_rl)
+        x = torch.cat([x_usage_rl, x_metric]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
         rlout = self.DqnOut(x)
         #batch x d_model
         return {'rl':rlout, 'ad':adout}
@@ -228,10 +238,10 @@ def get_cart_location(screen_width):
 
 ############################################ Training #################################
 BATCH_SIZE = 64
-GAMMA = 0.9
+GAMMA = 0.995
 EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 200
+EPS_END = 0.05#0.05
+EPS_DECAY = 1000
 TARGET_UPDATE = 10
 
 # Get screen size so that we can initialize layers correctly based on shape
@@ -250,8 +260,12 @@ target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters())
-optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
-
+#optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
+optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}, 
+                        {"params": policy_net.DqnOut_usage.parameters()},
+                        {"params": policy_net.DqnOut_metric.parameters()}
+                        ], lr = 1e-5)
+optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-3)
 memory = ReplayMemory(10000)
 steps_done = 0
 
@@ -287,8 +301,10 @@ def valid_plot(true, pred, episode):
 
 ############################################ Training loop #################################
 ad_count = 0
+total_adLoss = []
+total_RLoss = []
 def optimize_model():
-    global i_episode, ad_count
+    global i_episode, ad_count, total_adLoss, total_RLoss
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
@@ -317,12 +333,17 @@ def optimize_model():
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     pred = policy_net(state_batch[:, non_final_mask])['ad']
     loss_ad = criterion(pred, non_final_next_states[:10, :])
-    loss_merge = loss + loss_ad
+    # loss_merge = torch.log(1+loss) + torch.log(1+loss_ad)
+    loss_merge = torch.log(1+loss)
+    loss_AD = torch.log(1+loss_ad)
     # Optimize the model
     optimizer.zero_grad()
     loss_merge.backward()
-    if i_episode % 50 == 0 and ad_count == 0:
-        print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
+    optimizer_ad.zero_grad()
+    loss_AD.backward()
+    total_adLoss.append(np.log(1+loss_ad.item()))
+    total_RLoss.append(np.log(1+loss.item()))
+    if i_episode % 1 == 0 and ad_count == 0:
         ad_count = 1
         #验证网络预测能力
         valid_plot(non_final_next_states[:10, :], pred, i_episode)
@@ -332,6 +353,7 @@ def optimize_model():
         except Exception as e:
             pass
     optimizer.step()
+    optimizer_ad.step()
 num_episodes = 2000
 sequenceState = SequenceStates(max_length)
 
@@ -345,6 +367,8 @@ for i_episode in range(num_episodes):
         # Select and perform an action
         action = select_action(state)
         s, reward, done = env.step(action.item())
+        #状态归一化
+        s[11:] /= 32
         reward = torch.tensor([reward], device=device)
         with torch.no_grad():
             reward_total += reward.cpu().item()
@@ -367,6 +391,9 @@ for i_episode in range(num_episodes):
     if i_episode % 1 == 0:
         ad_count = 0
         print("Episode {} | Total reward is {} ".format(i_episode ,reward_total))
+        print('AD loss: {}. RL loss: {}'.format(np.mean(total_adLoss), np.mean(total_RLoss)))
+        total_RLoss = []
+        total_adLoss = []
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())

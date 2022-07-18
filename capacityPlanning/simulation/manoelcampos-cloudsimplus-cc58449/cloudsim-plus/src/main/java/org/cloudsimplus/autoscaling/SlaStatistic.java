@@ -16,8 +16,8 @@ public class SlaStatistic {
     /*
         默认参数列表
     */
-    int RT_MAX = 300; //RT:response time and unit is senond
-    int RT_MIN = 200;
+    int RT_MAX = 50; //RT:response time and unit is senond
+    int RT_MIN = 30;
     int UTILIZATION_MAX = 80;
     int UTILIZATION_MIN = 40;
     double TOTAL_SAMPLE = 0. + 1e-8;//总的采样数
@@ -38,7 +38,7 @@ public class SlaStatistic {
     public void getViloate(EventInfo evt){
 
         int nowTime = (int) evt.getTime();
-        if (nowTime % SAMPLE_RATE == 0 && nowTime != lastTime){
+        if (nowTime % 10 == 0 && nowTime != lastTime){
             lastTime = nowTime;
             for (Vm vm : vmList) {
                 List<CloudletExecution> completeList = vm.getCloudletScheduler().getCloudletFinishedList();
@@ -61,7 +61,7 @@ public class SlaStatistic {
                     }
                 }
             }
-            //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
+            System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
             writeSla(pth, "" + VIOLATE_SAMPLE / TOTAL_SAMPLE + "\n");
         }
     }
@@ -115,7 +115,8 @@ public class SlaStatistic {
             }
             //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
             //return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";//保留，在呈现实验结果时sla违反率更直观
-            return rt_reward / ut_reward + "";
+            //return rt_reward / ut_reward + "";
+            return "-1";//最短时间完成，验证模型有效性
 
         }
         return "";

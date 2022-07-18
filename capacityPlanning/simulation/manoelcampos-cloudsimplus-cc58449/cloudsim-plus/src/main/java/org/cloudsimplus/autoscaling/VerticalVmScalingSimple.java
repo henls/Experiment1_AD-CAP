@@ -110,15 +110,16 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     }*/
     @Override
     public boolean isVmUnderloaded(){
+        //由于仿真粒度小于1s，会在决策间隙访问此函数并产生扩展动作
         if (lastTime != (int) getVm().getSimulation().clock()){
-           /* System.out.printf(
+            System.out.printf(
                             "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                             getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
                             getVm().getCloudletScheduler().getCloudletExecList().size(),
                             getVm().getRam().getPercentUtilization()*100, getVm().getRam().getAllocatedResource(), getVm().getRam().getCapacity(),
                             getVm().getHost().getRam().getPercentUtilization() * 100,
                             getVm().getHost().getRam().getAllocatedResource(),
-                            getVm().getHost().getRam().getCapacity());*/ 
+                            getVm().getHost().getRam().getCapacity());
             
             long totalPEs = ExApi.writeStatus(getVm(), reward);
             this.action = ExApi.readAction();
@@ -130,9 +131,7 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             }
             lastTime = (int) getVm().getSimulation().clock();
         }
-        
         boolean is = false;
-        
         if (this.action.contains("-1")) {
             is = true;
         }
@@ -166,7 +165,7 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     @Override
     public boolean isVmOverloaded() {
         boolean is = false;
-        if (this.action.contains("1")){
+        if (this.action.contains("1") && this.action.contains("-1") == false){
             is = true;
         }
         return is;

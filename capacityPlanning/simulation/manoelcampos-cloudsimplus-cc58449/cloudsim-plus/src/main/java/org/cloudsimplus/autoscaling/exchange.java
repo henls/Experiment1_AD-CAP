@@ -80,7 +80,7 @@ public class exchange {
         }else{
             //如果占用了全部资源就停止，并给出-100的奖励
             if (totalPEs == 32){
-                reward = "-100";
+                reward = "-150";
             }else{
                 reward = sla.getViloate(vm, true);
             }
@@ -91,11 +91,12 @@ public class exchange {
         }else{
             done = "0";
         }
+        //核心为1继续减核心惩罚
         if (require_reward.equals("-101")){
             reward = require_reward;
         }
         //如果占用了全部资源就停止，并给出-100的奖励
-        if (reward.equals("-100")){
+        if (reward.equals("-150")){
             done = "1";
         }
         try {
@@ -132,6 +133,7 @@ public class exchange {
             double execTime = newCloudlet.getFinishTime() - newCloudlet.getCloudletArrivalTime();
             tmp = tmp + execTime;
         }
+        this.RT = 0.;
         if (newComplete.size() != 0){
             this.RT = tmp / newComplete.size();
         }
@@ -140,7 +142,7 @@ public class exchange {
         long availablePEs = vm.getFreePesNumber();
         long usedPEs = totalPEs - availablePEs;
         if (queue.size() == limit){
-            return queue.get() + "$" + RT+ "$" + usedPEs + "$" + totalPEs;
+            return queue.get() + "$" + this.RT+ "$" + usedPEs + "$" + totalPEs;
         }else{
             return "null";
         }

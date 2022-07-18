@@ -19,6 +19,7 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.optim.lr_scheduler import LambdaLR
 
+import numpy as np
 
 from line_profiler import LineProfiler
 ############################################ init #################################
@@ -96,7 +97,7 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:x.size(0), :]
 
 class TransAm(nn.Module):
-    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
+    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.5):
         super(TransAm, self).__init__()
         global max_length
         self.model_type = 'Transformer'
@@ -132,6 +133,10 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.encoder = TransAm(N_STATES, outputs)
         self.DqnOut = nn.Sequential(
+                        nn.Linear(10 * d_model, 5 * d_model),
+                        nn.ReLU(),
+                        nn.Linear(5 * d_model, d_model),
+                        nn.ReLU(),
                         nn.Linear(d_model, outputs)
                         )
         self.AdOut = nn.Sequential(
@@ -144,7 +149,8 @@ class Net(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         adout = self.AdOut(x)
-        rlout = self.DqnOut(x[-1, :])
+        #rlout = self.DqnOut(x[-1, :])
+        rlout = self.DqnOut(x.transpose(1, 0).reshape(-1, 320))
         return {'rl':rlout, 'ad':adout}
 
 ############################################ Input extraction #################################
@@ -178,13 +184,19 @@ target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters())
-optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
-
+#optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
+#主体网络是异常检测
+#optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
+#optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-3)
+#主体网络是强化学习
+optimizer = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
+optimizer_ad = optim.Adam([{"params": policy_net.AdOut.parameters()}], lr = 1e-3)
 memory = ReplayMemory(10000)
 steps_done = 0
 
 explore = 0
 total_decis = 0
+
 def select_action(state):
     global steps_done, total_decis, explore
     sample = random.random()
@@ -216,10 +228,14 @@ def valid_plot(true, pred, episode):
 
 ############################################ Training loop #################################
 ad_count = 0
+total_adLoss = []
+total_RLoss = []
+
 def optimize_model():
-    global i_episode, ad_count
+    global i_episode, ad_count, update_ad
     if len(memory) < BATCH_SIZE:
         return
+    update_ad += 1
     transitions = memory.sample(BATCH_SIZE)
 
     batch = Transition(*zip(*transitions))
@@ -246,12 +262,17 @@ def optimize_model():
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     pred = policy_net(state_batch[:, non_final_mask])['ad']
     loss_ad = criterion(pred, non_final_next_states)
-    loss_merge = loss + loss_ad
-    # Optimize the model
+    loss_merge = loss
+    #loss_merge = loss
+
     optimizer.zero_grad()
     loss_merge.backward()
+    optimizer_ad.zero_grad()
+    loss_ad.backward()
+    total_adLoss.append(loss_ad.item())
+    total_RLoss.append(loss.item())
     if i_episode % 50 == 0 and ad_count == 0:
-        print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
+        #print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
         ad_count = 1
         #验证网络预测能力
         valid_plot(non_final_next_states, pred, i_episode)
@@ -260,9 +281,12 @@ def optimize_model():
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
             pass
+    optimizer_ad.step()
     optimizer.step()
 num_episodes = 2000
+const_reward_total = 0
 sequenceState = SequenceStates(max_length)
+update_ad = 0
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
@@ -296,9 +320,13 @@ for i_episode in range(num_episodes):
         optimize_model()
         if done:
             break
-    if i_episode % 50 == 0:
+    if i_episode % 1 == 0:
+        const_reward_total = reward_total
         ad_count = 0
         print("Episode {} | Total reward is {} ".format(i_episode ,reward_total))
+        print('AD loss: {}. RL loss: {}'.format(np.mean(total_adLoss), np.mean(total_RLoss)))
+        total_RLoss = []
+        total_adLoss = []
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
