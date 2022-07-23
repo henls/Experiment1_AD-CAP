@@ -125,7 +125,7 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             this.action = ExApi.readAction();
             //如果只剩一个核还在继续减就给出-101的奖励，但不停止
             if (totalPEs == 1 && this.action.contains("-1")){
-                reward = "-101";
+                reward = "-10";
             }else{
                 reward = "0";
             }

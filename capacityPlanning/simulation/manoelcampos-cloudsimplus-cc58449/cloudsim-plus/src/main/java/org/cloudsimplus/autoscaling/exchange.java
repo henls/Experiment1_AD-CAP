@@ -35,6 +35,7 @@ public class exchange {
     List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>();
     double RT = 0;
     long totalPEs;
+    SlaStatistic sla;
     public exchange(){
     File configFile = new File(configPath);
         if (configFile.exists() == false){
@@ -71,7 +72,7 @@ public class exchange {
         //暂时只考虑垂直伸缩。
         List<Vm> vmList = new ArrayList<>();
         vmList.add(vm);
-        SlaStatistic sla = new SlaStatistic(vmList);
+        sla = new SlaStatistic(vmList);
         String content = new String();
         String statusSpace = getStatus(vm);
         String reward = new String();
@@ -92,7 +93,7 @@ public class exchange {
             done = "0";
         }
         //核心为1继续减核心惩罚
-        if (require_reward.equals("-101")){
+        if (require_reward.equals("-10")){
             reward = require_reward;
         }
         //如果占用了全部资源就停止，并给出-100的奖励
@@ -141,8 +142,9 @@ public class exchange {
         totalPEs = vm.getNumberOfPes();
         long availablePEs = vm.getFreePesNumber();
         long usedPEs = totalPEs - availablePEs;
+        int cloudletNums = vm.getCloudletScheduler().getCloudletExecList().size();
         if (queue.size() == limit){
-            return queue.get() + "$" + this.RT+ "$" + usedPEs + "$" + totalPEs;
+            return queue.get() + "$" + this.RT+ "$" + usedPEs + "$" + totalPEs + "$" + cloudletNums;
         }else{
             return "null";
         }

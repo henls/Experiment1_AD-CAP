@@ -1,5 +1,6 @@
 from cProfile import label
 import itertools
+import re
 from sys import prefix
 import time
 from turtle import forward
@@ -29,8 +30,11 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 torch.manual_seed(200)
 random.seed(60)
-max_length = 13
+max_length = 14
 dqn_from_ad = False
+duel = 0
+if duel:
+    print("使用duel DQN")
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -88,12 +92,13 @@ class envCapacity(object):
             with open(self.status_path, 'w') as f:
                 f.write(fd + 'OK')
         p, reward, done = fd.split('&')[0], float(fd.split('&')[1]), float(fd.split('&')[2])
-        cpu, RT, usedPEs, totalpes = p.split('$')
+        cpu, RT, usedPEs, totalpes, cloudletNums = p.split('$')
         cpu = [float(i) for i in cpu[1:-1].split(',')]
         RT = float(RT)
         usedPEs = float(usedPEs)
         totalpes = float(totalpes)
-        return np.array(cpu + [RT, usedPEs, totalpes]).reshape(self.max_length, -1), reward, done
+        cloudletNums = float(cloudletNums)
+        return np.array(cpu + [RT, usedPEs, totalpes, cloudletNums]).reshape(self.max_length, -1), reward, done
 
 env = envCapacity(3, 1, 'config/configure')
 
@@ -170,7 +175,7 @@ class TransAm(nn.Module):
 
     def forward(self, src):
         if self.src_mask is None or self.src_mask.size(0) != len(src):
-            mask = self._generate_square_subsequent_mask(max_length - 3).to(device)
+            mask = self._generate_square_subsequent_mask(10).to(device)
             self.src_mask = mask
         src = src.to(torch.float32)
         src = self.fc(src)
@@ -191,6 +196,9 @@ class Net(nn.Module):
         self.DqnOut = nn.Sequential(
                         nn.Linear(d_model * 2, outputs)
                         )
+        self.out = nn.Sequential(
+                        nn.Linear(d_model, outputs)
+                        )
         self.DqnOut_usage = nn.Sequential(
                         nn.Linear(d_model * 10, d_model),
                         nn.ReLU(),
@@ -198,12 +206,10 @@ class Net(nn.Module):
                         nn.ReLU()
                         )
         self.DqnOut_metric = nn.Sequential(
-                        nn.Linear(2, d_model),
-                        #nn.ReLU(),
-                        nn.Tanh(),
+                        nn.Linear(1, d_model),
+                        nn.ReLU(),
                         nn.Linear(d_model, d_model),
-                        #nn.ReLU()
-                        nn.Tanh()
+                        nn.ReLU()
                         )
         self.AdOut = nn.Sequential(
                         nn.Linear(d_model, d_model),
@@ -211,6 +217,16 @@ class Net(nn.Module):
                         nn.Linear(d_model, d_model),
                         nn.ReLU(),
                         nn.Linear(d_model, N_STATES)
+                        )
+        self.ad = nn.Sequential(
+                        nn.Linear(d_model, 16),
+                        nn.ReLU(),
+                        nn.Linear(16, outputs)
+                        ) 
+        self.val = nn.Sequential(
+                        nn.Linear(d_model, 16),
+                        nn.ReLU(),
+                        nn.Linear(16, 1)
                         )
     def forward(self, x):
         #transformer应该只对序列编码，RT等特征需要单独提取
@@ -220,12 +236,18 @@ class Net(nn.Module):
         adout = self.AdOut(x_usage)#时间窗口内的数据（利用率数据）
         x_usage_rl = x_usage.reshape(-1, 10 * self.d_model) # batch x d_model
         #交换x[10:]数据的1、2维，不把数据看成序列，因为不再是序列变成batchsize x feature
-        #x_metric = self.DqnOut_metric(x[10:].transpose(1,0).reshape(-1, 3))
-        x_metric = self.DqnOut_metric(x[11:].transpose(1,0).reshape(-1, 2))#先把响应时间去掉
-        # 响应时间、当前虚拟机已用资源、当前虚拟机总容量
+        #x_metric = self.DqnOut_metric(x[10:].transpose(1,0).reshape(-1, 4))
+        x_metric = self.DqnOut_metric((x[12] - x[13]).transpose(1,0).reshape(-1, 1))
+        # 响应时间、当前虚拟机已用资源、当前虚拟机总容量、任务数
         x_usage_rl = self.DqnOut_usage(x_usage_rl)
-        x = torch.cat([x_usage_rl, x_metric]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
-        rlout = self.DqnOut(x)
+        #x = torch.cat([x_usage_rl, x_metric]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
+        #rlout = self.DqnOut(x)
+        if duel:
+            ad = self.ad(x_metric)
+            val = self.val(x_metric).expand(x_metric.size(0), ad.size(1))
+            rlout = val + ad - ad.mean(1).unsqueeze(1).expand(x_metric.size(0), ad.size(1))
+        else:
+            rlout = self.out(x_metric)
         #batch x d_model
         return {'rl':rlout, 'ad':adout}
 
@@ -238,7 +260,7 @@ def get_cart_location(screen_width):
 
 ############################################ Training #################################
 BATCH_SIZE = 64
-GAMMA = 0.995
+GAMMA = 0.9
 EPS_START = 0.9
 EPS_END = 0.05#0.05
 EPS_DECAY = 1000
@@ -261,11 +283,15 @@ target_net.eval()
 
 #optimizer = optim.RMSprop(policy_net.parameters())
 #optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
+
 optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}, 
                         {"params": policy_net.DqnOut_usage.parameters()},
-                        {"params": policy_net.DqnOut_metric.parameters()}
-                        ], lr = 1e-5)
-optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-3)
+                        {"params": policy_net.DqnOut_metric.parameters()},
+                        {"params": policy_net.out.parameters()},
+                        {"params": policy_net.ad.parameters()},
+                        {"params": policy_net.val.parameters()}
+                        ], lr = 1e-3)
+optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-4)
 memory = ReplayMemory(10000)
 steps_done = 0
 
@@ -303,6 +329,7 @@ def valid_plot(true, pred, episode):
 ad_count = 0
 total_adLoss = []
 total_RLoss = []
+DDQN = False
 def optimize_model():
     global i_episode, ad_count, total_adLoss, total_RLoss
     if len(memory) < BATCH_SIZE:
@@ -324,6 +351,12 @@ def optimize_model():
 
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
     next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
+    #DDQN
+    if (DDQN):
+        q_tp1_values = policy_net(non_final_next_states)['rl'].detach()
+        _, a_prime = q_tp1_values.max(1)
+        q_s_a = target_net(non_final_next_states)['rl'].detach()
+        next_state_values[non_final_mask] = q_s_a.gather(1, a_prime.unsqueeze(0))
 
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -331,6 +364,7 @@ def optimize_model():
     #criterion = nn.SmoothL1Loss()
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+    clipped_loss = loss.clamp(-1, 1)
     pred = policy_net(state_batch[:, non_final_mask])['ad']
     loss_ad = criterion(pred, non_final_next_states[:10, :])
     # loss_merge = torch.log(1+loss) + torch.log(1+loss_ad)
@@ -339,6 +373,7 @@ def optimize_model():
     # Optimize the model
     optimizer.zero_grad()
     loss_merge.backward()
+    # clipped_loss.backward()
     optimizer_ad.zero_grad()
     loss_AD.backward()
     total_adLoss.append(np.log(1+loss_ad.item()))
@@ -347,16 +382,30 @@ def optimize_model():
         ad_count = 1
         #验证网络预测能力
         valid_plot(non_final_next_states[:10, :], pred, i_episode)
-    for param in policy_net.parameters():
+    '''for param in policy_net.parameters():
         try:
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
-            pass
+            pass'''
     optimizer.step()
     optimizer_ad.step()
 num_episodes = 2000
 sequenceState = SequenceStates(max_length)
-
+reward_max = -1e5
+if duel:
+    log_pth = r'./save-capacity-duel.log'
+    model_pth = r'./BestModel-capacity-duel.pth'
+else:
+    log_pth = r'./save-capacity.log'
+    model_pth = r'./BestModel-capacity.pth'
+try:
+    with open(log_pth, 'r') as f:
+        fd = f.readlines()
+    reward_max = float(re.findall(r'[-]\d+', fd[-1])[0])
+    policy_net.load_state_dict(torch.load(model_pth))
+    print("加载模型>>>>reward={}".format(reward_max))
+except Exception as e:
+    print(e)
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
@@ -368,7 +417,7 @@ for i_episode in range(num_episodes):
         action = select_action(state)
         s, reward, done = env.step(action.item())
         #状态归一化
-        s[11:] /= 32
+        #s[11:] /= 32
         reward = torch.tensor([reward], device=device)
         with torch.no_grad():
             reward_total += reward.cpu().item()
@@ -397,6 +446,11 @@ for i_episode in range(num_episodes):
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
+    if reward_total > reward_max and i_episode > 1:
+        with open(log_pth, 'a') as f:
+            f.write(str(reward_total) + '\n')
+        reward_max = reward_total
+        torch.save(policy_net.state_dict(), model_pth)
 
 print('Complete')
 env.render()

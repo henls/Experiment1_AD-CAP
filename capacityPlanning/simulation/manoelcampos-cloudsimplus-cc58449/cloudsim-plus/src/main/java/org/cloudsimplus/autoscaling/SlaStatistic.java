@@ -30,11 +30,10 @@ public class SlaStatistic {
 
     List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>();
     List<Vm> vmList = new ArrayList<Vm>();
-
+    int lastCloudletsNumber = 0;
     public SlaStatistic(List<Vm> vmList) {
         this.vmList = vmList;
     }
-
     public void getViloate(EventInfo evt){
 
         int nowTime = (int) evt.getTime();
@@ -73,12 +72,13 @@ public class SlaStatistic {
             double ut_reward = 1.;
             lastTime = nowTime;
             int tmp = 0;
+            double vmUtil = 0.;
             for (Vm vm : vmList) {
                 List<CloudletExecution> completeList = vm.getCloudletScheduler().getCloudletFinishedList();
                 List<CloudletExecution> newComplete = ListUtils.subtract(completeList,completeLast);
                 List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>(completeList);
                 this.completeLast = completeLast;
-                int vmUtil = (int) vm.getCpuPercentUtilization() * 100;
+                vmUtil = vm.getCpuPercentUtilization() * 100;
                 for (CloudletExecution newCloudlet : newComplete) {
                     TOTAL_SAMPLE += 1.;
                     double execTime = newCloudlet.getFinishTime() - newCloudlet.getCloudletArrivalTime();
@@ -116,8 +116,13 @@ public class SlaStatistic {
             //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
             //return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";//保留，在呈现实验结果时sla违反率更直观
             //return rt_reward / ut_reward + "";
-            return "-1";//最短时间完成，验证模型有效性
-
+            //return "-1";//最短时间完成，验证模型有效性
+            //return -1 * vmUtil / 100. + "";
+            //return -1 * Math.abs(vmList.get(0).getCloudletScheduler().getCloudletExecList().size() - vmList.get(0).getNumberOfPes()) + "";
+            System.out.println(lastCloudletsNumber);
+            String ret = -1 * Math.abs(lastCloudletsNumber - vmList.get(0).getNumberOfPes()) + "";
+            lastCloudletsNumber = vmList.get(0).getCloudletScheduler().getCloudletExecList().size();
+            return ret;
         }
         return "";
     }

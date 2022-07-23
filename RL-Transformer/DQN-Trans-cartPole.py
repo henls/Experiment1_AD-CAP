@@ -1,5 +1,6 @@
 from cProfile import label
 import itertools
+import re
 from sys import prefix
 from turtle import forward
 import gym
@@ -186,12 +187,12 @@ target_net.eval()
 #optimizer = optim.RMSprop(policy_net.parameters())
 #optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
 #主体网络是异常检测
-#optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
-#optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-3)
+optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
+optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-10)
 #主体网络是强化学习
-optimizer = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
-optimizer_ad = optim.Adam([{"params": policy_net.AdOut.parameters()}], lr = 1e-3)
-memory = ReplayMemory(10000)
+#optimizer = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
+#optimizer_ad = optim.Adam([{"params": policy_net.AdOut.parameters()}], lr = 1e-3)
+memory = ReplayMemory(1000000)
 steps_done = 0
 
 explore = 0
@@ -206,9 +207,6 @@ def select_action(state):
     total_decis += 1
     if sample > eps_threshold:
         with torch.no_grad():
-            # t.max(1) will return largest column value of each row.
-            # second column on max result is index of where max element was
-            # found, so we pick action with the larger expected reward.
             return policy_net(state)['rl'].max(1)[1].view(1, 1)
     else:
         explore += 1
@@ -287,6 +285,16 @@ num_episodes = 2000
 const_reward_total = 0
 sequenceState = SequenceStates(max_length)
 update_ad = 0
+
+reward_max = 0
+try:
+    with open(r'./cartpole.log', 'r') as f:
+        fd = f.readlines()
+    reward_max = float(re.findall(r'\d+', fd[-1])[0])
+    policy_net.load_state_dict(torch.load(r'./cartpoleBest.pth'))
+    print("加载模型>>>>reward={}".format(reward_max))
+except Exception as e:
+    print(e)
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
@@ -330,6 +338,11 @@ for i_episode in range(num_episodes):
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
+    if reward_total > reward_max:
+        reward_max = reward_total
+        with open(r'./cartpole.log', 'a') as f:
+            f.write(str(reward_total) + '\n')
+        torch.save(policy_net.state_dict(), r'./cartpoleBest.pth')
 
 print('Complete')
 env.render()

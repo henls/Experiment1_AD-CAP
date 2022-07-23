@@ -104,7 +104,6 @@ class DQN(object):
         # 将32个s_抽出，转为32-bit floating point形式，并存储到b_s中，b_s_为32行4列
 
         # 获取32个transition的评估值和目标值，并利用损失函数和优化器进行评估网络参数更新
-        
         q_eval = self.eval_net(b_s).gather(1, b_a.long())
         # eval_net(b_s)通过评估网络输出32行每个b_s对应的一系列动作值，然后.gather(1, b_a)代表对每行对应索引b_a的Q值提取进行聚合
         q_next = self.target_net(b_s_).detach()

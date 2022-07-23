@@ -188,7 +188,8 @@ public class VerticalVmCpuScalingExampleRevised {
     SlaStatistic sla;    
     public static void main(String[] args) {
         int episode = 1000;
-        while (episode > 0){
+        //while (episode > 0){
+        while (true){
             new VerticalVmCpuScalingExampleRevised();
             episode--;
             System.out.printf("episode %d \n", 1000-episode);

@@ -3,13 +3,13 @@
 
 # Log file
 *.log
-
+*.csv
 # BlueJ files
 *.ctxt
 *.lprof
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
-
+*.pth
 # Package Files #
 *.jar
 *.war
@@ -70,7 +70,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+*.csv
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

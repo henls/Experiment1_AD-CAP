@@ -2,7 +2,7 @@
     "action": "/home/wangxinhua/Experiment1_AD-CAP/RL-Transformer/action.msg",
     "status": "/home/wangxinhua/Experiment1_AD-CAP/RL-Transformer/status.msg",
     "vmSize": 1,
-    "maxlength": 13
+    "maxlength": 14
 }
 
 
