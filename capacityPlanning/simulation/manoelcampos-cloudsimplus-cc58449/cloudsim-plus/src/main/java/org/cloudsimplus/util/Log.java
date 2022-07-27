@@ -59,10 +59,10 @@ public final class Log {
      * You can enable just a specific type of log messages
      * by using, for example, {@link Level#WARN} value.
      * To completely disable logging, use {@link Level#OFF}.
-     * @param level the logging level to set
+     * @param off the logging level to set
      */
-    public static void setLevel(final Level level){
+    public static void setLevel(final Level off){
         final Logger root = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        setLevel(root, level);
+        setLevel(root, off);
     }
 }

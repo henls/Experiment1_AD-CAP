@@ -35,7 +35,8 @@ public class exchange {
     List<CloudletExecution> completeLast = new ArrayList<CloudletExecution>();
     double RT = 0;
     long totalPEs;
-    SlaStatistic sla;
+    List<Vm> vmList = new ArrayList<>();//无用，只是不想改了，改完好几个地方要改
+    SlaStatistic sla = new SlaStatistic(vmList);
     public exchange(){
     File configFile = new File(configPath);
         if (configFile.exists() == false){
@@ -70,9 +71,6 @@ public class exchange {
     public long writeStatus(Vm vm, String require_reward){
         //所有虚拟机增减完成后才发送reward，因为要做水平伸缩的实验。暂时只考虑静态虚拟机个数。
         //暂时只考虑垂直伸缩。
-        List<Vm> vmList = new ArrayList<>();
-        vmList.add(vm);
-        sla = new SlaStatistic(vmList);
         String content = new String();
         String statusSpace = getStatus(vm);
         String reward = new String();
@@ -84,16 +82,18 @@ public class exchange {
                 reward = "-150";
             }else{
                 reward = sla.getViloate(vm, true);
+                System.out.println("reward: " + reward);
             }
         }
         String done = new String();
-        if (vm.getCloudletScheduler().getCloudletExecList().size() <= 1){
+        //if (vm.getCloudletScheduler().getCloudletExecList().size() <= 1){
+        if (vm.getSimulation().clock() > 86400){
             done = "1";
         }else{
             done = "0";
         }
         //核心为1继续减核心惩罚
-        if (require_reward.equals("-10")){
+        if (require_reward.equals("-100")){
             reward = require_reward;
         }
         //如果占用了全部资源就停止，并给出-100的奖励

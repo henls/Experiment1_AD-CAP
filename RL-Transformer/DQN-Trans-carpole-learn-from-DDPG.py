@@ -19,6 +19,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.optim.lr_scheduler import LambdaLR
+torch.autograd.set_detect_anomaly(True)
 
 import numpy as np
 
@@ -31,7 +32,18 @@ env.seed(1000)
 torch.manual_seed(200)
 random.seed(60)
 max_length = 10
-dqn_from_ad = False
+
+BATCH_SIZE = 64
+GAMMA = 0.9
+EPS_START = 0.9
+EPS_END = 0.05
+EPS_DECAY = 200
+TARGET_UPDATE = 10
+tau = 0.0005
+LR_TS = 1e-3
+LR_RL = 1e-3
+N_STATES = 4
+outputs_dim = env.action_space.n
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -112,7 +124,7 @@ class TransAm(nn.Module):
                     nn.Linear(16, d_model),
                     nn.ReLU(),
                     nn.Linear(d_model, d_model),
-                    nn.ReLU(),
+                    nn.ReLU()
                 )
 
     def forward(self, src):
@@ -129,69 +141,101 @@ class TransAm(nn.Module):
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-class Net(nn.Module):
-    def __init__(self, N_STATES, outputs, d_model=32, num_layers=1, dropout=0.):
-        super(Net, self).__init__()
-        self.encoder = TransAm(N_STATES, outputs)
-        self.DqnOut = nn.Sequential(
-                        nn.Linear(10 * d_model, 5 * d_model),
-                        nn.ReLU(),
-                        nn.Linear(5 * d_model, d_model),
-                        nn.ReLU(),
-                        nn.Linear(d_model, outputs)
-                        )
-        self.AdOut = nn.Sequential(
+class RlNet(nn.Module):
+    def __init__(self, outputs_dim, d_model=32):
+        super(RlNet, self).__init__()
+        self.net = nn.Sequential(
+                    nn.Linear(10 * d_model, d_model),
+                    nn.ReLU(),
+                    nn.Linear(d_model, outputs_dim)
+                    )
+    def forward(self, extract):
+        act = self.net(extract.transpose(1, 0).reshape(-1, 320))
+        return act
+
+class TsNet(nn.Module):
+    def __init__(self, N_STATES, outputs_dim):
+        super(TsNet, self).__init__()
+        self.encoder = TransAm(N_STATES, outputs_dim)
+        
+    def forward(self, s):
+        extract = self.encoder(s)
+        return extract
+
+class ArNet(nn.Module):
+    def __init__(self, N_STATES, d_model=32):
+        super(ArNet, self).__init__()
+        self.net = nn.Sequential(
                         nn.Linear(d_model, d_model),
                         nn.ReLU(),
                         nn.Linear(d_model, d_model),
                         nn.ReLU(),
                         nn.Linear(d_model, N_STATES)
                         )
-    def forward(self, x):
-        x = self.encoder(x)
-        adout = self.AdOut(x)
-        #rlout = self.DqnOut(x[-1, :])
-        rlout = self.DqnOut(x.transpose(1, 0).reshape(-1, 320))
-        return {'rl':rlout, 'ad':adout}
+    def forward(self, extract):
+        return self.net(extract)
 
-############################################ Input extraction #################################
+class TS():
+    def __init__(self):
+        self.TS_estimate = TsNet(N_STATES, outputs_dim).to(device)
+        self.TS_target = TsNet(N_STATES, outputs_dim).to(device)
+        self.optimizer = torch.optim.Adam(self.TS_estimate.parameters(), lr = LR_TS)
 
-def get_cart_location(screen_width):
-    world_width = env.x_threshold * 2
-    scale = screen_width / world_width
-    return int(env.state[0] * scale + screen_width / 2.0)  # MIDDLE OF CART
+    def encode(self, s):
+        s_extract = self.TS_estimate(s)
+        return s_extract
+    
+    def encode_target(self, s):
+        s_extract_target = self.TS_target(s)
+        return s_extract_target
+    
+    def learn(self, loss_Q):
+        loss = loss_Q
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def soft_update(self):
+        for target_param, param in zip(self.TS_target.parameters(), 
+                                    self.TS_estimate.parameters()):
+            target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
+
+class RL():
+    def __init__(self):
+        self.RL_estimate = RlNet(outputs_dim).to(device)
+        self.RL_target = RlNet(outputs_dim).to(device)
+        self.optimizer = torch.optim.Adam(self.RL_estimate.parameters(), lr = LR_RL)
+        self.lossfun = nn.MSELoss()
+
+    def select_action(self, extract):
+        return self.RL_estimate(extract).detach()
+
+    def loss_for_ts(self, extract):
+        Q_estimate = -1 * self.RL_estimate(extract).min(1)[0].mean()
+        return Q_estimate
+
+    def learn(self, extract, a, r, s_, mask):
+        Q_estimate = self.RL_estimate(extract).gather(1, a)
+        Q_next = torch.zeros(extract.shape[1], device=device)
+        Q_next[mask] = self.RL_target(s_).max(1)[0].detach()
+        #Q_next[mask] = self.RL_target(s_).mean(dim = 1).detach()
+        Q_target = r + GAMMA * Q_next
+        loss = self.lossfun(Q_estimate, Q_target)
+        self.optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        self.optimizer.step()
+    
+    def soft_update(self):
+        for target_param, param in zip(self.RL_target.parameters(),
+                                       self.RL_estimate.parameters()):
+            target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
+
 
 ############################################ Training #################################
-BATCH_SIZE = 64
-GAMMA = 0.9
-EPS_START = 0.9
-EPS_END = 0.05
-EPS_DECAY = 200
-TARGET_UPDATE = 10
 
-# Get screen size so that we can initialize layers correctly based on shape
-# returned from AI gym. Typical dimensions at this point are close to 3x40x90
-# which is the result of a clamped and down-scaled render buffer in get_screen()
+model_ts = TS()
+model_rl = RL()
 
-screen_height, screen_width = 1, 4
-
-# Get number of actions from gym action space
-n_actions = env.action_space.n
-
-policy_net = Net(4, n_actions).to(device)
-target_net = Net(4, n_actions).to(device)
-
-target_net.load_state_dict(policy_net.state_dict())
-target_net.eval()
-
-#optimizer = optim.RMSprop(policy_net.parameters())
-#optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
-#主体网络是异常检测
-#optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
-#optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-10)
-#主体网络是强化学习
-optimizer = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.DqnOut.parameters()}], lr = 1e-3)
-optimizer_ad = optim.Adam([{"params": policy_net.AdOut.parameters()}], lr = 1e-3)
 memory = ReplayMemory(1000000)
 steps_done = 0
 
@@ -207,10 +251,13 @@ def select_action(state):
     total_decis += 1
     if sample > eps_threshold:
         with torch.no_grad():
-            return policy_net(state)['rl'].max(1)[1].view(1, 1)
+            #return policy_net(state)['rl'].max(1)[1].view(1, 1)
+            extract = model_ts.encode(state)
+            return model_rl.select_action(extract).max(1)[1].view(1, 1)
+            #return model_rl(model_ts(state)).max(1)[1].view(1, 1)
     else:
         explore += 1
-        return torch.tensor([[random.randrange(n_actions)]], device=device, dtype=torch.long)
+        return torch.tensor([[random.randrange(outputs_dim)]], device=device, dtype=torch.long)
 
 def valid_plot(true, pred, episode):
     x_true = true[-1, :].to("cpu").detach().numpy() 
@@ -228,7 +275,7 @@ def valid_plot(true, pred, episode):
 ad_count = 0
 total_adLoss = []
 total_RLoss = []
-DDQN = 1
+
 def optimize_model():
     global i_episode, ad_count, update_ad
     if len(memory) < BATCH_SIZE:
@@ -246,48 +293,16 @@ def optimize_model():
     state_batch = torch.cat(batch.state, dim=1)
     action_batch = torch.cat(batch.action)
     reward_batch = torch.cat(batch.reward)
-
-    state_action_values = policy_net(state_batch)['rl'].gather(1, action_batch)
-
-    next_state_values = torch.zeros(BATCH_SIZE, device=device)
+    next_states = model_ts.encode(non_final_next_states).detach()
+    extract = model_ts.encode(state_batch)
+    model_rl.learn(extract, action_batch, reward_batch, next_states, non_final_mask)
+    loss_ts = model_rl.loss_for_ts(extract)
+    model_ts.learn(loss_ts)
+    model_ts.soft_update()
+    model_rl.soft_update()
     
-    if (DDQN):
-        with torch.no_grad():
-            q_tp1_values = policy_net(non_final_next_states)['rl'].detach()
-            _, a_prime = q_tp1_values.max(1)
-            q_s_a = target_net(non_final_next_states)['rl'].detach()
-            next_state_values[non_final_mask] = q_s_a.gather(1, a_prime.unsqueeze(1)).squeeze()
-    else:
-        next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
-    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+    
 
-    # Compute Huber loss
-    #criterion = nn.SmoothL1Loss()
-    criterion = nn.MSELoss()
-    loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
-    pred = policy_net(state_batch[:, non_final_mask])['ad']
-    loss_ad = criterion(pred, non_final_next_states)
-    loss_merge = loss
-    #loss_merge = loss
-
-    optimizer.zero_grad()
-    loss_merge.backward()
-    optimizer_ad.zero_grad()
-    loss_ad.backward()
-    total_adLoss.append(loss_ad.item())
-    total_RLoss.append(loss.item())
-    if i_episode % 50 == 0 and ad_count == 0:
-        #print('AD loss: ', loss_ad.item(), 'lr ', optimizer.param_groups[0]['lr'])
-        ad_count = 1
-        #验证网络预测能力
-        valid_plot(non_final_next_states, pred, i_episode)
-    for param in policy_net.parameters():
-        try:
-            param.grad.data.clamp_(-1, 1)
-        except Exception as e:
-            pass
-    optimizer_ad.step()
-    optimizer.step()
 num_episodes = 2000
 const_reward_total = 0
 sequenceState = SequenceStates(max_length)
@@ -298,7 +313,8 @@ try:
     with open(r'./cartpole.log', 'r') as f:
         fd = f.readlines()
     reward_max = float(re.findall(r'\d+', fd[-1])[0])
-    policy_net.load_state_dict(torch.load(r'./cartpoleBest.pth'))
+    model_ts.load_state_dict(torch.load(r'./cartpoleBestTs.pth'))
+    model_rl.load_state_dict(torch.load(r'./cartpoleBestRl.pth'))
     print("加载模型>>>>reward={}".format(reward_max))
 except Exception as e:
     print(e)
@@ -343,13 +359,12 @@ for i_episode in range(num_episodes):
         total_RLoss = []
         total_adLoss = []
     # Update the target network, copying all weights and biases in DQN
-    if i_episode % TARGET_UPDATE == 0:
-        target_net.load_state_dict(policy_net.state_dict())
     if reward_total > reward_max:
         reward_max = reward_total
         with open(r'./cartpole.log', 'a') as f:
             f.write(str(reward_total) + '\n')
-        torch.save(policy_net.state_dict(), r'./cartpoleBest.pth')
+        torch.save(model_ts.state_dict(), r'./cartpoleBestTs.pth')
+        torch.save(model_rl.state_dict(), r'./cartpoleBestRl.pth')
 
 print('Complete')
 env.render()

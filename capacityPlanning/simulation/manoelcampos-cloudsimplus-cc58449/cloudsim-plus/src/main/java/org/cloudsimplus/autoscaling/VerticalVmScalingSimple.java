@@ -69,6 +69,7 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     int lastTime = 0;
     String action = new String();
     String reward = "0";
+    int SAMPLE_RATE = 10;
     public VerticalVmScalingSimple(final Class<? extends ResourceManageable> resourceClassToScale, final double scalingFactor){
         super(resourceClassToScale, new ResourceScalingGradual(), scalingFactor);
     }
@@ -111,7 +112,8 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
     @Override
     public boolean isVmUnderloaded(){
         //由于仿真粒度小于1s，会在决策间隙访问此函数并产生扩展动作
-        if (lastTime != (int) getVm().getSimulation().clock()){
+        int nowTime = (int) getVm().getSimulation().clock();
+        if (lastTime != nowTime && nowTime % SAMPLE_RATE == 0 ){
             System.out.printf(
                             "\t\tTime %6.1f: Vm %d CPU Usage: %6.2f%% (%2d vCPUs. Running Cloudlets: #%d). Ram Usage: %6.2f%% (%4d of %4d MB)" + " | Host Ram Allocation: %6.2f%% (%5d of %5d MB).%n",
                             getVm().getSimulation().clock(), getVm().getId(), getVm().getCpuPercentUtilization()*100.0, getVm().getNumberOfPes(),
@@ -125,11 +127,15 @@ public class VerticalVmScalingSimple extends VerticalVmScalingAbstract {
             this.action = ExApi.readAction();
             //如果只剩一个核还在继续减就给出-101的奖励，但不停止
             if (totalPEs == 1 && this.action.contains("-1")){
-                reward = "-10";
+                reward = "-100";
             }else{
                 reward = "0";
             }
             lastTime = (int) getVm().getSimulation().clock();
+        }else{
+            if (lastTime != nowTime){
+                this.action = "0";
+            }
         }
         boolean is = false;
         if (this.action.contains("-1")) {

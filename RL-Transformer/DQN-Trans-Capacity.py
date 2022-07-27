@@ -32,6 +32,10 @@ torch.manual_seed(200)
 random.seed(60)
 max_length = 14
 dqn_from_ad = False
+anomaly_side = 0
+anomaly_error = []
+util_max = 0.8
+util_min = 0.2
 duel = 0
 if duel:
     print("使用duel DQN")
@@ -193,30 +197,14 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.encoder = TransAm(N_STATES, outputs)
         self.d_model = d_model
-        self.DqnOut = nn.Sequential(
-                        nn.Linear(d_model * 2, outputs)
-                        )
         self.out = nn.Sequential(
                         nn.Linear(d_model, outputs)
                         )
-        self.DqnOut_usage = nn.Sequential(
-                        nn.Linear(d_model * 10, d_model),
-                        nn.ReLU(),
-                        nn.Linear(d_model, d_model),
-                        nn.ReLU()
-                        )
         self.DqnOut_metric = nn.Sequential(
-                        nn.Linear(1, d_model),
+                        nn.Linear(3, d_model),
                         nn.ReLU(),
                         nn.Linear(d_model, d_model),
                         nn.ReLU()
-                        )
-        self.AdOut = nn.Sequential(
-                        nn.Linear(d_model, d_model),
-                        nn.ReLU(),
-                        nn.Linear(d_model, d_model),
-                        nn.ReLU(),
-                        nn.Linear(d_model, N_STATES)
                         )
         self.ad = nn.Sequential(
                         nn.Linear(d_model, 16),
@@ -232,16 +220,10 @@ class Net(nn.Module):
         #transformer应该只对序列编码，RT等特征需要单独提取
         #x:sequence x batchsize x dim
         x = x.float()
-        x_usage = self.encoder(x[:10])#得到序列特征
-        adout = self.AdOut(x_usage)#时间窗口内的数据（利用率数据）
-        x_usage_rl = x_usage.reshape(-1, 10 * self.d_model) # batch x d_model
-        #交换x[10:]数据的1、2维，不把数据看成序列，因为不再是序列变成batchsize x feature
-        #x_metric = self.DqnOut_metric(x[10:].transpose(1,0).reshape(-1, 4))
-        x_metric = self.DqnOut_metric((x[12] - x[13]).transpose(1,0).reshape(-1, 1))
+        #x_metric = self.DqnOut_metric((x[12] - x[13]).transpose(1,0).reshape(-1, 1))
+        x_metric = self.DqnOut_metric((x[[9, 12, 13]]).transpose(1,0).reshape(-1, 3))
         # 响应时间、当前虚拟机已用资源、当前虚拟机总容量、任务数
-        x_usage_rl = self.DqnOut_usage(x_usage_rl)
         #x = torch.cat([x_usage_rl, x_metric]).reshape(x.shape[1], -1)#两个特征融合后送到dqnout决策。
-        #rlout = self.DqnOut(x)
         if duel:
             ad = self.ad(x_metric)
             val = self.val(x_metric).expand(x_metric.size(0), ad.size(1))
@@ -249,14 +231,25 @@ class Net(nn.Module):
         else:
             rlout = self.out(x_metric)
         #batch x d_model
-        return {'rl':rlout, 'ad':adout}
+        return {'rl':rlout}
 
-############################################ Input extraction #################################
-
-def get_cart_location(screen_width):
-    world_width = env.x_threshold * 2
-    scale = screen_width / world_width
-    return int(env.state[0] * scale + screen_width / 2.0)  # MIDDLE OF CART
+class AdNet(nn.Module):
+    def __init__(self, N_STATES, outputs, d_model=32):
+        super(AdNet, self).__init__()
+        self.encoder = TransAm(N_STATES, outputs)
+        self.d_model = d_model
+        self.AdOut = nn.Sequential(
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, d_model),
+                        nn.ReLU(),
+                        nn.Linear(d_model, N_STATES)
+                        )
+    def forward(self, x):
+        x = x.float()
+        x_usage = self.encoder(x[:10])#得到序列特征
+        adout = self.AdOut(x_usage)#时间窗口内的数据（利用率数据）
+        return {'ad':adout}
 
 ############################################ Training #################################
 BATCH_SIZE = 64
@@ -277,6 +270,7 @@ n_actions = env.actionSpace()
 n_status = env.statusSpace()
 policy_net = Net(n_status, n_actions).to(device)
 target_net = Net(n_status, n_actions).to(device)
+ad_net = AdNet(n_status, n_actions).to(device)
 
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
@@ -284,15 +278,10 @@ target_net.eval()
 #optimizer = optim.RMSprop(policy_net.parameters())
 #optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
 
-optimizer = optim.Adam([{"params": policy_net.DqnOut.parameters()}, 
-                        {"params": policy_net.DqnOut_usage.parameters()},
-                        {"params": policy_net.DqnOut_metric.parameters()},
-                        {"params": policy_net.out.parameters()},
-                        {"params": policy_net.ad.parameters()},
-                        {"params": policy_net.val.parameters()}
-                        ], lr = 1e-3)
-optimizer_ad = optim.Adam([{"params": policy_net.encoder.parameters()}, {"params": policy_net.AdOut.parameters()}], lr = 1e-4)
-memory = ReplayMemory(10000)
+optimizer = optim.Adam(policy_net.parameters(), lr = 1e-3)
+optimizer_AD = optim.Adam(ad_net.parameters(), lr = 1e-4)
+memory = ReplayMemory(1000000)
+memory_ad = ReplayMemory(1000000)
 steps_done = 0
 
 explore = 0
@@ -325,12 +314,60 @@ def valid_plot(true, pred, episode):
     plt.savefig('graph/transformer-episode{}.png'.format(episode))
     plt.close()
 
+def isAnomaly(s, s_):
+    
+    if len(anomaly_error) < 1000:
+        return False
+    s_pred = ad_net(s_)['ad'][-1]
+    if s_pred > util_max or s_pred < util_min:
+        return True
+    cat_err = torch.cat(anomaly_error, dim = 0)
+    mu, sigma = torch.mean(cat_err), torch.std(cat_err)
+    s_last_pred = ad_net(s)['ad'][-1]
+    loss = s_[-1] - s_last_pred
+    if loss > mu + 2 * sigma or loss < mu - 2 * sigma:
+        return True
+    else:
+        return False
+
+    
+
 ############################################ Training loop #################################
+
 ad_count = 0
 total_adLoss = []
 total_RLoss = []
-DDQN = False
-def optimize_model():
+DDQN = True
+def optimize_ad():
+    global i_episode, ad_count, total_adLoss, total_RLoss
+    if len(memory_ad) < BATCH_SIZE:
+        return 
+    transitions = memory_ad.sample(BATCH_SIZE)
+    batch = Transition(*zip(*transitions))
+    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                          batch.next_state)), device=device, dtype=torch.bool)
+
+    non_final_next_states = torch.cat([s for s in batch.next_state
+                                                if s is not None], dim=1).to(torch.float32)
+    state_batch = torch.cat(batch.state, dim=1)
+    criterion = nn.MSELoss()
+    pred = ad_net(state_batch[:, non_final_mask])['ad']
+    with torch.no_grad():
+        if i_episode % 1 == 0 and ad_count == 0:
+            ad_count = 1
+            #验证网络预测能力
+            valid_plot(non_final_next_states[:10, :], pred, i_episode)
+        err = non_final_next_states[:10, :] - pred
+        for i in range(len(pred)):
+            anomaly_error.append(err[i])
+    loss_ad = criterion(pred, non_final_next_states[:10, :])
+    loss_AD = torch.log(1+loss_ad)
+    total_adLoss.append(np.log(1+loss_AD.item()))
+    optimizer_AD.zero_grad()
+    loss_AD.backward()
+    optimizer_AD.step()
+
+def optimize_rl():
     global i_episode, ad_count, total_adLoss, total_RLoss
     if len(memory) < BATCH_SIZE:
         return
@@ -350,14 +387,15 @@ def optimize_model():
     state_action_values = policy_net(state_batch)['rl'].gather(1, action_batch)
 
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
     #DDQN
     if (DDQN):
-        q_tp1_values = policy_net(non_final_next_states)['rl'].detach()
-        _, a_prime = q_tp1_values.max(1)
-        q_s_a = target_net(non_final_next_states)['rl'].detach()
-        next_state_values[non_final_mask] = q_s_a.gather(1, a_prime.unsqueeze(0))
-
+        with torch.no_grad():
+            q_tp1_values = policy_net(non_final_next_states)['rl'].detach()
+            _, a_prime = q_tp1_values.max(1)
+            q_s_a = target_net(non_final_next_states)['rl'].detach()
+            next_state_values[non_final_mask] = q_s_a.gather(1, a_prime.unsqueeze(1)).squeeze()
+    else:
+        next_state_values[non_final_mask] = target_net(non_final_next_states)['rl'].max(1)[0].detach()
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
@@ -365,56 +403,55 @@ def optimize_model():
     criterion = nn.MSELoss()
     loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
     clipped_loss = loss.clamp(-1, 1)
-    pred = policy_net(state_batch[:, non_final_mask])['ad']
-    loss_ad = criterion(pred, non_final_next_states[:10, :])
     # loss_merge = torch.log(1+loss) + torch.log(1+loss_ad)
-    loss_merge = torch.log(1+loss)
-    loss_AD = torch.log(1+loss_ad)
+    # loss_merge = torch.log(1+loss)
+    loss_merge = loss
     # Optimize the model
     optimizer.zero_grad()
     loss_merge.backward()
     # clipped_loss.backward()
-    optimizer_ad.zero_grad()
-    loss_AD.backward()
-    total_adLoss.append(np.log(1+loss_ad.item()))
     total_RLoss.append(np.log(1+loss.item()))
-    if i_episode % 1 == 0 and ad_count == 0:
-        ad_count = 1
-        #验证网络预测能力
-        valid_plot(non_final_next_states[:10, :], pred, i_episode)
     '''for param in policy_net.parameters():
         try:
             param.grad.data.clamp_(-1, 1)
         except Exception as e:
             pass'''
     optimizer.step()
-    optimizer_ad.step()
 num_episodes = 2000
 sequenceState = SequenceStates(max_length)
 reward_max = -1e5
 if duel:
     log_pth = r'./save-capacity-duel.log'
-    model_pth = r'./BestModel-capacity-duel.pth'
+    rl_pth = r'./BestModel-capacity-duel-rl.pth'
+    ad_pth = r'./BestModel-capacity-duel-ad.pth'
 else:
     log_pth = r'./save-capacity.log'
-    model_pth = r'./BestModel-capacity.pth'
+    rl_pth = r'./BestModel-capacity-rl.pth'
+    ad_pth = r'./BestModel-capacity-ad.pth'
 try:
     with open(log_pth, 'r') as f:
         fd = f.readlines()
-    reward_max = float(re.findall(r'[-]\d+', fd[-1])[0])
-    policy_net.load_state_dict(torch.load(model_pth))
+    reward_max = float(re.findall(r'\d+', fd[-1])[0])
+    policy_net.load_state_dict(torch.load(rl_pth))
+    ad_net.load_state_dict(torch.load(ad_pth))
     print("加载模型>>>>reward={}".format(reward_max))
 except Exception as e:
     print(e)
+anomaly = 0
 for i_episode in range(num_episodes):
     # Initialize the environment and state
     reward_total = 0
     state = env.reset()
     #13 x 1.长度13，维度1
     state = torch.from_numpy(state).reshape(max_length, -1, n_status).to(device)
+    last_state = state
     for t in count():
         # Select and perform an action
-        action = select_action(state)
+        anomaly = isAnomaly(last_state, state)
+        if anomaly:
+            action = select_action(state)
+        else:
+            action = torch.IntTensor([0])
         s, reward, done = env.step(action.item())
         #状态归一化
         #s[11:] /= 32
@@ -427,14 +464,16 @@ for i_episode in range(num_episodes):
             next_state = s
         else:
             next_state = None
-
         # Store the transition in memory
-        memory.push(state, action, next_state, reward)
-
+        if anomaly:
+            memory.push(state, action, next_state, reward)
+        memory_ad.push(state, action, next_state, reward)
         # Move to the next state
+        last_state = state
         state = next_state
         # Perform one step of the optimization (on the policy network)
-        optimize_model()
+        optimize_rl()
+        optimize_ad()
         if done:
             break
     if i_episode % 1 == 0:
@@ -450,7 +489,8 @@ for i_episode in range(num_episodes):
         with open(log_pth, 'a') as f:
             f.write(str(reward_total) + '\n')
         reward_max = reward_total
-        torch.save(policy_net.state_dict(), model_pth)
+        torch.save(policy_net.state_dict(), rl_pth)
+        torch.save(ad_net.state_dict(), ad_pth)
 
 print('Complete')
 env.render()

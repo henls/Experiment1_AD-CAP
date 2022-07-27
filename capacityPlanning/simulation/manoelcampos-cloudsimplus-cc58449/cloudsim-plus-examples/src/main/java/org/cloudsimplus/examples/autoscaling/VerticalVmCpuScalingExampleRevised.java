@@ -59,6 +59,10 @@ import org.cloudsimplus.autoscaling.resources.ResourceScalingInstantaneous;
 import org.cloudsimplus.builders.tables.CloudletsTableBuilder;
 import org.cloudsimplus.listeners.EventInfo;
 import org.cloudsimplus.listeners.EventListener;
+import org.cloudsimplus.util.Log;
+
+import ch.qos.logback.classic.Level;
+
 import static org.cloudbus.cloudsim.utilizationmodels.UtilizationModel.Unit;
 
 import java.util.ArrayList;
@@ -68,6 +72,7 @@ import java.util.List;
 import java.util.Random;
 
 import java.lang.*;
+import java.nio.file.ClosedDirectoryStreamException;
 
 import static java.util.Comparator.comparingDouble;
 
@@ -179,7 +184,10 @@ public class VerticalVmCpuScalingExampleRevised {
     int lastTime = 0;
 
     private int createsVms;
-    private 
+
+    int delayTimeAbs = 0;
+    double anomalyRatio = 0.1;
+
     ArrayList<Double> recordCpu = new ArrayList<Double>();
     ArrayList<Double> recordRam = new ArrayList<Double>();
     
@@ -226,9 +234,8 @@ public class VerticalVmCpuScalingExampleRevised {
         createCloudletListsWithDifferentDelays();
         broker0.submitVmList(vmList);
         broker0.submitCloudletList(cloudletList);
-
+        Log.setLevel(Level.OFF);//关闭所有系统通知
         simulation.start();
-
         printSimulationResults();
     }
 
@@ -257,7 +264,7 @@ public class VerticalVmCpuScalingExampleRevised {
         recordRam.add(vmList.get(0).getRam().getPercentUtilization());
         int sample_interval = 1;
         if(nowTime % sample_interval == 0 && nowTime != lastTime && nowTime < sample_interval * 9000){
-            lastTime = nowTime;
+            //lastTime = nowTime;
             String time = "" + nowTime + ",";
             String cpuUsage = "" + recordCpu.stream().mapToDouble(a -> a).average().getAsDouble() + ",";
             String ramUsage = "" + recordRam.stream().mapToDouble(a -> a).average().getAsDouble() + "\n";
@@ -279,7 +286,6 @@ public class VerticalVmCpuScalingExampleRevised {
         final Comparator<Cloudlet> sortByVmId = comparingDouble(c -> c.getVm().getId());
         final Comparator<Cloudlet> sortByStartTime = comparingDouble(Cloudlet::getExecStartTime);
         finishedCloudlets.sort(sortByVmId.thenComparing(sortByStartTime));
-
         new CloudletsTableBuilder(finishedCloudlets).build();
     }
 
@@ -323,6 +329,7 @@ public class VerticalVmCpuScalingExampleRevised {
         List<Vm> newList = new ArrayList<>(numberOfVms);
         for (int i = 0; i < numberOfVms; i++) {
             Vm vm = createVm();
+            vm.enableUtilizationStats();
             vm.setPeVerticalScaling(createVerticalPeScaling());
             //.setRamVerticalScaling(createVerticalRamScaling());
             newList.add(vm);
@@ -342,7 +349,6 @@ public class VerticalVmCpuScalingExampleRevised {
             .setRam(VM_RAM).setBw(1000).setSize(10000)
             .setCloudletScheduler(new CloudletSchedulerTimeShared());
     }
-
     /**
      * Creates a {@link VerticalVmScaling} for scaling VM's CPU when it's under or overloaded.
      *
@@ -452,37 +458,40 @@ public class VerticalVmCpuScalingExampleRevised {
     private double upperRamUtilizationThreshold(Vm vm) {
         return 0.7;
     }
-
     /**
      * Creates lists of Cloudlets to be submitted to the broker with different delays,
      * simulating their arrivals at different times.
      * Adds all created Cloudlets to the {@link #cloudletList}.
      */
     private void createCloudletListsWithDifferentDelays() {
-        final int normalCloudletsNumber = (int)(CLOUDLETS*9.0/10);
-        final int anomalyCloudletsNumber = CLOUDLETS-normalCloudletsNumber;
-
-        int delayTimeAbs = 0;
-
+        final int normalCloudletsNumber = (int)(CLOUDLETS*(1-anomalyRatio)); //正常占总任务90%
+        final int anomalyCloudletsNumber = CLOUDLETS-normalCloudletsNumber; //异常占10%
         //Creates a List of Cloudlets that will start running immediately when the simulation starts
-        for (int i = 0; i < normalCloudletsNumber; i++) {
-            double nextDouble = getRand.nextDouble(1) * (
-                CLOUDLETS_LENGTH_UPPER - CLOUDLETS_LENGTH_LOWER) + CLOUDLETS_LENGTH_LOWER;
-            delayTimeAbs = delayTimeAbs + nextTime(1.0/4);
-            cloudletList.add(createCloudlet(CLOUDLETS_INITIAL_LENGTH+((int) nextDouble), 1, delayTimeAbs));
-        }
+        while (delayTimeAbs < 86400){
+            for (int i = 0; i < normalCloudletsNumber; i++) {
+                double nextDouble = getRand.nextDouble(1) * (
+                    CLOUDLETS_LENGTH_UPPER - CLOUDLETS_LENGTH_LOWER) + CLOUDLETS_LENGTH_LOWER;
+                delayTimeAbs = delayTimeAbs + nextTime(1.0/4);//delayTimeAbs是任务启动时间，任务速率是4/s
+                cloudletList.add(createCloudlet(CLOUDLETS_INITIAL_LENGTH+((int) nextDouble), 1, delayTimeAbs));
+            }
 
-        //注入异常
-        if (anomaly == true) {
-        delayTimeAbs = 300;
-        for (int i = 1; i <= anomalyCloudletsNumber; i++) {
-            double nextDouble = getRand.nextDouble(1) * (
-                CLOUDLETS_LENGTH_UPPER - CLOUDLETS_LENGTH_LOWER) + CLOUDLETS_LENGTH_LOWER;
-            delayTimeAbs = delayTimeAbs + nextTime(1.0/300);
-            String type = "bottleneck"; //patternShift只支持mixed
-            String resource = "mix";
-            cloudletList.add(createAnomaly.generateAnomaly((int) nextDouble, 1, resource, type, delayTimeAbs));
-        }
+            //注入异常
+            if (anomaly == true) {
+            //delayTimeAbs = 300;
+            //异常占10%
+                if (getRand.nextDouble(1) > (1-anomalyRatio)){
+                    int anomaylDealyTime = delayTimeAbs;
+                    for (int i = 1; i <= anomalyCloudletsNumber; i++) {
+                        double nextDouble = getRand.nextDouble(1) * (
+                            CLOUDLETS_LENGTH_UPPER - CLOUDLETS_LENGTH_LOWER) + CLOUDLETS_LENGTH_LOWER;
+                        //单独记录异常任务的到达时间
+                        anomaylDealyTime = anomaylDealyTime + nextTime(1.0/300);
+                        String type = "bottleneck"; //patternShift只支持mixed
+                        String resource = "mix";
+                        cloudletList.add(createAnomaly.generateAnomaly((int) nextDouble, 1, resource, type, anomaylDealyTime));
+                    }
+                }
+            }
         }
     }
 
@@ -540,7 +549,7 @@ public class VerticalVmCpuScalingExampleRevised {
             
         return cl;
     }
-
+    //指数分布的时间间隔，对应柏松分布的任务到达率
     private int nextTime(double rateParameter){
     return (int) (-Math.log(1.0 - getRand.nextDouble(1)) / rateParameter);
     }
