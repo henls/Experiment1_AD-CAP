@@ -37,6 +37,11 @@ anomaly_error = []
 util_max = 0.8
 util_min = 0.2
 duel = 0
+withAnomaly = False
+if withAnomaly:
+    print("使用异常辅助")
+else:
+    print("未启动异常辅助")
 if duel:
     print("使用duel DQN")
 # set up matplotlib
@@ -45,7 +50,8 @@ if is_ipython:
     from IPython import display
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 ############################################ replay memory #################################
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
@@ -315,20 +321,22 @@ def valid_plot(true, pred, episode):
     plt.close()
 
 def isAnomaly(s, s_):
-    
-    if len(anomaly_error) < 1000:
-        return False
-    s_pred = ad_net(s_)['ad'][-1]
-    if s_pred > util_max or s_pred < util_min:
-        return True
-    cat_err = torch.cat(anomaly_error, dim = 0)
-    mu, sigma = torch.mean(cat_err), torch.std(cat_err)
-    s_last_pred = ad_net(s)['ad'][-1]
-    loss = s_[-1] - s_last_pred
-    if loss > mu + 2 * sigma or loss < mu - 2 * sigma:
-        return True
+    if withAnomaly:
+        if len(anomaly_error) < 1000:
+            return False
+        s_pred = ad_net(s_)['ad'][-1]
+        if s_pred > util_max:
+            return True
+        cat_err = torch.cat(anomaly_error, dim = 0)
+        mu, sigma = torch.mean(cat_err), torch.std(cat_err)
+        s_last_pred = ad_net(s)['ad'][-1]
+        loss = s_[-1] - s_last_pred
+        if loss > mu + 2 * sigma or loss < mu - 2 * sigma:
+            return True
+        else:
+            return False
     else:
-        return False
+        return True
 
     
 
@@ -338,6 +346,10 @@ ad_count = 0
 total_adLoss = []
 total_RLoss = []
 DDQN = True
+if DDQN:
+    print("使用DDQN")
+else:
+    print("未使用DDQN")
 def optimize_ad():
     global i_episode, ad_count, total_adLoss, total_RLoss
     if len(memory_ad) < BATCH_SIZE:

@@ -82,13 +82,13 @@ public class exchange {
                 reward = "-150";
             }else{
                 reward = sla.getViloate(vm, true);
-                System.out.println("reward: " + reward);
             }
         }
         String done = new String();
         //if (vm.getCloudletScheduler().getCloudletExecList().size() <= 1){
         if (vm.getSimulation().clock() > 86400){
             done = "1";
+            reward = "300";
         }else{
             done = "0";
         }
@@ -99,6 +99,10 @@ public class exchange {
         //如果占用了全部资源就停止，并给出-100的奖励
         if (reward.equals("-150")){
             done = "1";
+        }
+        if (vm.getCloudletScheduler().getCloudletExecList().size() > 200){
+            done = "1";
+            reward = "-200";
         }
         try {
             while (content.contains("OK") == false){
@@ -115,7 +119,8 @@ public class exchange {
         return totalPEs;
     }
     public String getStatus(Vm vm){
-        double cpuPercentage = vm.getCpuPercentUtilization();
+        //double cpuPercentage = vm.getCpuPercentUtilization();
+        double cpuPercentage = sla.getVmCpuMean(vm, (int)vm.getSimulation().clock());
         if (Double.isNaN(cpuPercentage) != true){
             if (queue.size() > 0){
                 if (queue.getLast() != cpuPercentage){

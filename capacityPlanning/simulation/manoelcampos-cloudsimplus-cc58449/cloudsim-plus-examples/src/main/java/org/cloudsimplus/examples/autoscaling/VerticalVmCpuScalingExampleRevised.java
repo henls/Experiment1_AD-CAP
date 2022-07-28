@@ -138,8 +138,8 @@ public class VerticalVmCpuScalingExampleRevised {
     private static final int CLOUDLETS = 30;
     //private static final int CLOUDLETS_INITIAL_LENGTH = 60_000_000;sampled
     private static final int CLOUDLETS_INITIAL_LENGTH = 1_000; 
-    private static final int CLOUDLETS_LENGTH_LOWER = 2_000;
-    private static final int CLOUDLETS_LENGTH_UPPER = 5_000;
+    private static final int CLOUDLETS_LENGTH_LOWER = 1_000;
+    private static final int CLOUDLETS_LENGTH_UPPER = 3_000;
 
     private static final String workdir = "/home/wangxinhua/Experiment1_AD-CAP" + "/capacityPlanning/simulation/manoelcampos-cloudsimplus-cc58449/cloudsim-plus-examples/src/main/";
 
@@ -177,7 +177,7 @@ public class VerticalVmCpuScalingExampleRevised {
                                                       };
 
     Random getRand = new Random(400);
-    boolean anomaly = true;
+    boolean anomaly = false;
 
     private static final String sampleTracePth = workdir + "resources/workload/sample/sample.csv";
 
@@ -236,7 +236,7 @@ public class VerticalVmCpuScalingExampleRevised {
         broker0.submitCloudletList(cloudletList);
         Log.setLevel(Level.OFF);//关闭所有系统通知
         simulation.start();
-        printSimulationResults();
+        //printSimulationResults();
     }
 
     /**
@@ -471,7 +471,7 @@ public class VerticalVmCpuScalingExampleRevised {
             for (int i = 0; i < normalCloudletsNumber; i++) {
                 double nextDouble = getRand.nextDouble(1) * (
                     CLOUDLETS_LENGTH_UPPER - CLOUDLETS_LENGTH_LOWER) + CLOUDLETS_LENGTH_LOWER;
-                delayTimeAbs = delayTimeAbs + nextTime(1.0/4);//delayTimeAbs是任务启动时间，任务速率是4/s
+                delayTimeAbs = delayTimeAbs + nextTime(1.0/4);//delayTimeAbs是任务启动时间，平均时间间隔为4s
                 cloudletList.add(createCloudlet(CLOUDLETS_INITIAL_LENGTH+((int) nextDouble), 1, delayTimeAbs));
             }
 

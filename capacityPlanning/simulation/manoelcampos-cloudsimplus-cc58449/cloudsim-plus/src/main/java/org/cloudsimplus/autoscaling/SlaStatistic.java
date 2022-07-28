@@ -16,7 +16,7 @@ public class SlaStatistic {
     /*
         默认参数列表
     */
-    int RT_MAX = 50; //RT:response time and unit is senond
+    int RT_MAX = 100; //RT:response time and unit is senond
     int RT_MIN = 30;
     int UTILIZATION_MAX = 80;
     int UTILIZATION_MIN = 10;
@@ -49,7 +49,7 @@ public class SlaStatistic {
                 for (CloudletExecution newCloudlet : newComplete) {
                     TOTAL_SAMPLE += 1.;
                     double execTime = newCloudlet.getFinishTime() - newCloudlet.getCloudletArrivalTime();
-                    if (execTime < RT_MIN || execTime > RT_MAX || vmUtil < UTILIZATION_MIN || vmUtil > UTILIZATION_MAX){
+                    if (execTime < RT_MIN || execTime > RT_MAX || vmUtil > UTILIZATION_MAX){
                         /*System.out.println("execTime " + execTime);
                         System.out.printf("execTime < RT_MIN %b || execTime > RT_MAX %b || vmUtil < UTILIZATION_MIN %b || vmUtil > UTILIZATION_MAX %b%n",
                                             execTime < RT_MIN, 
@@ -117,7 +117,7 @@ public class SlaStatistic {
             }
             //System.out.printf("#INFO violate rate is %2.2f%% %n", VIOLATE_SAMPLE / TOTAL_SAMPLE * 100);
             //return VIOLATE_SAMPLE / TOTAL_SAMPLE + "";//保留，在呈现实验结果时sla违反率更直观
-            System.out.printf("|rt: %d|rt_reward: %f|ut_reward: %f|reward: %f|\n",rt_record, rt_reward, ut_reward, rt_reward / ut_reward);
+            //System.out.printf("|rt: %d|rt_reward: %f|ut_reward: %f|reward: %f|\n",rt_record, rt_reward, ut_reward, rt_reward / ut_reward);
             return rt_reward / ut_reward + "";
             //return "-1";//最短时间完成，验证模型有效性
             //return -1 * vmUtil / 100. + "";
@@ -130,7 +130,7 @@ public class SlaStatistic {
     }
 
     public double getVmCpuMean(Vm vm, int time){
-        int START_TIME = time - SAMPLE_RATE;
+        int START_TIME = time - SAMPLE_RATE + 1;
         double ans = 0.;
         for (int i = START_TIME; i <= time; i++){
             ans += vm.getCpuPercentUtilization((double) i);
